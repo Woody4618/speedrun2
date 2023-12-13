@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Threading.Tasks;
 using Cysharp.Threading.Tasks;
+using DefaultNamespace;
 using Frictionless;
 using Game.Scripts.Ui;
 using Tufia;
@@ -31,6 +32,13 @@ public class AnchorService : MonoBehaviour
     public const int MAX_ENERGY = 100;
     public const int MAX_WOOD_PER_TREE = 100000;
 
+    public const byte BUILDING_TYPE_EMPTY = 0;
+    public const byte BUILDING_TYPE_PLAYER = 1;
+    public const byte BUILDING_TYPE_ENEMY = 2;
+    public const byte BUILDING_TYPE_BLUE_CHEST = 3;
+    public const byte BUILDING_TYPE_GOLD_CHEST = 4;
+    public const byte BUILDING_TYPE_STAIRS = 5;
+
     public static AnchorService Instance { get; private set; }
     public static Action<PlayerData> OnPlayerDataChanged;
     public static Action<GameData> OnGameDataChanged;
@@ -48,20 +56,20 @@ public class AnchorService : MonoBehaviour
 
     private SessionWallet sessionWallet;
     private PublicKey PlayerDataPDA;
-    private PublicKey GameDataPDA;
+    //private PublicKey GameDataPDA;
     private bool _isInitialized;
     private TufiaClient anchorClient;
     private int blockingTransactionsInProgress;
     private int nonBlockingTransactionsInProgress;
     private long? sessionValidUntil;
     private string sessionKeyPassword = "inGame"; // Would be better to generate and save in playerprefs
-    private string levelSeed = "level_2";
+    private string DefaultFloorSeed = "floorsss";
     private ushort transactionCounter = 0;
-    
+
     // Only used to show transaction speed. Feel free to remove
     private Dictionary<ushort, Stopwatch> stopWatches = new ();
     private long lastTransactionTimeInMs;
-    
+
     private void Awake()
     {
         if (Instance != null && Instance != this)
@@ -84,9 +92,9 @@ public class AnchorService : MonoBehaviour
     private async void OnLogin(Account account)
     {
         Debug.Log("Logged in with pubkey: " + account.PublicKey);
-        
+
         await RequestAirdropIfSolValueIsLow();
-        
+
         sessionWallet = await SessionWallet.GetSessionWallet(AnchorProgramIdPubKey, sessionKeyPassword);
         await UpdateSessionValid();
 
@@ -106,9 +114,21 @@ public class AnchorService : MonoBehaviour
                 {Encoding.UTF8.GetBytes("player"), account.PublicKey.KeyBytes},
             AnchorProgramIdPubKey, out PlayerDataPDA, out byte bump);
 
-        PublicKey.TryFindProgramAddress(new[]
-                {Encoding.UTF8.GetBytes(levelSeed)},
-            AnchorProgramIdPubKey, out GameDataPDA, out byte bump2);
+       /* PublicKey.TryFindProgramAddress(new[]
+            {Encoding.UTF8.GetBytes(FloorSeed)},
+          AnchorProgramIdPubKey, out GameDataPDA, out byte bump2);*/
+    }
+
+    private PublicKey GetCurrentFloorSeed(out string seed)
+    {
+      PublicKey result = null;
+      int currentFloor = CurrentPlayerData != null ? CurrentPlayerData.CurrentFloor : 0;
+      seed = DefaultFloorSeed + currentFloor;
+      PublicKey.TryFindProgramAddress(new[]
+          {Encoding.UTF8.GetBytes(seed)  },
+        AnchorProgramIdPubKey, out result, out byte bump2);
+
+      return result;
     }
 
     private static async Task RequestAirdropIfSolValueIsLow()
@@ -165,7 +185,7 @@ public class AnchorService : MonoBehaviour
 
     private void OnReceivedPlayerDataUpdate(PlayerData playerData)
     {
-        Debug.Log($"Socket Message: Player has {playerData.Wood} wood now.");
+        Debug.Log($"Socket Message: Player is at {playerData.CurrentFloor} floor now.");
         stopWatches[playerData.LastId].Stop();
         lastTransactionTimeInMs = stopWatches[playerData.LastId].ElapsedMilliseconds;
         CurrentPlayerData = playerData;
@@ -178,7 +198,7 @@ public class AnchorService : MonoBehaviour
 
         try
         {
-            gameData = await anchorClient.GetGameDataAsync(GameDataPDA, Commitment.Confirmed);
+            gameData = await anchorClient.GetGameDataAsync(GetCurrentFloorSeed(out String seed), Commitment.Confirmed);
             if (gameData.ParsedResult != null)
             {
                 CurrentGameData = gameData.ParsedResult;
@@ -192,7 +212,7 @@ public class AnchorService : MonoBehaviour
 
         if (gameData != null)
         {
-            await anchorClient.SubscribeGameDataAsync(GameDataPDA, (state, value, gameData) =>
+            await anchorClient.SubscribeGameDataAsync(GetCurrentFloorSeed(out String seed), (state, value, gameData) =>
             {
                 OnRecievedGameDataUpdate(gameData);
             }, Commitment.Processed);
@@ -217,11 +237,11 @@ public class AnchorService : MonoBehaviour
 
         InitPlayerAccounts accounts = new InitPlayerAccounts();
         accounts.Player = PlayerDataPDA;
-        accounts.GameData = GameDataPDA;
+        accounts.GameData = GetCurrentFloorSeed(out String seed);
         accounts.Signer = Web3.Account;
         accounts.SystemProgram = SystemProgram.ProgramIdKey;
 
-        var initTx = TufiaProgram.InitPlayer(accounts, levelSeed, AnchorProgramIdPubKey);
+        var initTx = TufiaProgram.InitPlayer(accounts, seed, AnchorProgramIdPubKey);
         tx.Add(initTx);
 
         if (true)
@@ -252,7 +272,7 @@ public class AnchorService : MonoBehaviour
     {
         (isBlocking ? ref blockingTransactionsInProgress : ref nonBlockingTransactionsInProgress)++;
         LastError = String.Empty;
-        
+
         Debug.Log("Sending and confirming transaction: " + label);
         RequestResult<string> res;
         try
@@ -280,7 +300,7 @@ public class AnchorService : MonoBehaviour
             if (res.RawRpcResponse.Contains("InsufficientFundsForRent"))
             {
                 Debug.Log("Trigger session top up (Not implemented)");
-                // TODO: This can probably happen when the session key runs out of funds. Easiest is to just create a 
+                // TODO: This can probably happen when the session key runs out of funds. Easiest is to just create a
                 // new session in this popup. Other option would be to implement a topup popup
                 ServiceFactory.Resolve<UiService>().OpenPopup(UiService.ScreenType.SessionPopup, new SessionPopupUiData());
             }
@@ -304,7 +324,33 @@ public class AnchorService : MonoBehaviour
         Debug.Log("Session closed");
     }
 
-    public async void ChopTree(bool useSession, Action onSuccess)
+    public void OnCellClicked(byte x, byte y)
+    {
+        var cell = ServiceFactory.Resolve<BoardManager>().GetCell(x, y);
+        var tileData = CurrentGameData.Data[x][y];
+        if (tileData.TileType == BUILDING_TYPE_EMPTY)
+        {
+            // TODO: Move
+            MoveToTile(true, () =>
+            {
+
+            }, x, y);
+        }else if (tileData.TileType == BUILDING_TYPE_PLAYER)
+        {
+            // TODO: If me nothing otherwise attack player
+        } else if (tileData.TileType == BUILDING_TYPE_GOLD_CHEST || tileData.TileType == BUILDING_TYPE_BLUE_CHEST)
+        {
+            // TODO: Open chest
+        } else if (tileData.TileType == BUILDING_TYPE_ENEMY )
+        {
+            // TODO: attack enemy or just move?
+        }else if (tileData.TileType == BUILDING_TYPE_STAIRS )
+        {
+            // TODO: GO to next floor
+        }
+    }
+
+    public async void MoveToTile(bool useSession, Action onSuccess, ulong x, ulong y)
     {
         if (!Instance.IsSessionValid())
         {
@@ -313,7 +359,7 @@ public class AnchorService : MonoBehaviour
             return;
         }
 
-        // only for time tracking feel free to remove 
+        // only for time tracking feel free to remove
         var stopWatch = new Stopwatch();
         stopWatch.Start();
         stopWatches[++transactionCounter] = stopWatch;
@@ -325,19 +371,19 @@ public class AnchorService : MonoBehaviour
             RecentBlockHash = await Web3.BlockHash(maxSeconds: 15)
         };
 
-        ChopTreeAccounts chopTreeAccounts = new ChopTreeAccounts
+        MoveToTileAccounts chopTreeAccounts = new MoveToTileAccounts
         {
             Player = PlayerDataPDA,
-            GameData = GameDataPDA,
+            GameData = GetCurrentFloorSeed(out String seed),
             SystemProgram = SystemProgram.ProgramIdKey
         };
 
-        if (useSession)
+        if (useSession && CurrentGameData != null)
         {
             transaction.FeePayer = sessionWallet.Account.PublicKey;
             chopTreeAccounts.Signer = sessionWallet.Account.PublicKey;
             chopTreeAccounts.SessionToken = sessionWallet.SessionTokenPDA;
-            var chopInstruction = TufiaProgram.ChopTree(chopTreeAccounts, levelSeed, transactionCounter, AnchorProgramIdPubKey);
+            var chopInstruction = TufiaProgram.MoveToTile(chopTreeAccounts, seed, transactionCounter, x, y, AnchorProgramIdPubKey);
             transaction.Add(chopInstruction);
             Debug.Log("Sign and send chop tree with session");
             await SendAndConfirmTransaction(sessionWallet, transaction, "Chop Tree with session.", isBlocking: false, onSucccess: onSuccess);
@@ -346,7 +392,7 @@ public class AnchorService : MonoBehaviour
         {
             transaction.FeePayer = Web3.Account.PublicKey;
             chopTreeAccounts.Signer = Web3.Account.PublicKey;
-            var chopInstruction = TufiaProgram.ChopTree(chopTreeAccounts, levelSeed, transactionCounter, AnchorProgramIdPubKey);
+            var chopInstruction = TufiaProgram.MoveToTile(chopTreeAccounts, seed, transactionCounter, x, y, AnchorProgramIdPubKey);
             transaction.Add(chopInstruction);
             Debug.Log("Sign and send init without session");
             await SendAndConfirmTransaction(Web3.Wallet, transaction, "Chop Tree without session.", onSucccess: onSuccess);

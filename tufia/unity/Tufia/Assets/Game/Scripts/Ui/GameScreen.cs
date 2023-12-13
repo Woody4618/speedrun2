@@ -22,7 +22,7 @@ public class GameScreen : MonoBehaviour
     public Button InitGameDataButton;
 
     public TextMeshProUGUI EnergyAmountText;
-    public TextMeshProUGUI WoodAmountText;
+    public TextMeshProUGUI CurrentFloorText;
     public TextMeshProUGUI NextEnergyInText;
     public TextMeshProUGUI TotalLogAvailableText;
 
@@ -31,14 +31,14 @@ public class GameScreen : MonoBehaviour
     public GameObject ActionFx;
     public GameObject ActionFxPosition;
     public GameObject Tree;
-    
+
     private Vector3 CharacterStartPosition;
     private PlayerData currentPlayerData;
     private GameData currentGameData;
-    
+
     void Start()
     {
-        ChuckWoodSessionButton.onClick.AddListener(OnChuckWoodSessionButtonClicked);
+        ChuckWoodSessionButton.onClick.AddListener(OnMovePlayerButtonClicked);
         NftsButton.onClick.AddListener(OnNftsButtonClicked);
         InitGameDataButton.onClick.AddListener(OnInitGameDataButtonClicked);
         CharacterStartPosition = ChuckWoodSessionButton.transform.localPosition;
@@ -49,7 +49,7 @@ public class GameScreen : MonoBehaviour
             return;
         }
         StartCoroutine(UpdateNextEnergy());
-        
+
         AnchorService.OnPlayerDataChanged += OnPlayerDataChanged;
         AnchorService.OnGameDataChanged += OnGameDataChanged;
         AnchorService.OnInitialDataLoaded += UpdateContent;
@@ -69,7 +69,7 @@ public class GameScreen : MonoBehaviour
 
     private async void OnInitGameDataButtonClicked()
     {
-        // On local host we probably dont have the session key progeam, but can just sign with the in game wallet instead. 
+        // On local host we probably dont have the session key progeam, but can just sign with the in game wallet instead.
         await AnchorService.Instance.InitAccounts(!Web3.Rpc.NodeAddress.AbsoluteUri.Contains("localhost"));
     }
 
@@ -89,9 +89,10 @@ public class GameScreen : MonoBehaviour
 
     private void OnPlayerDataChanged(PlayerData playerData)
     {
-        if (currentPlayerData != null && currentPlayerData.Wood < playerData.Wood)
+        if (currentPlayerData != null && currentPlayerData.CurrentFloor < playerData.CurrentFloor)
         {
-            ChuckWoodSessionButton.transform.DOLocalMove(CharacterStartPosition, 0.2f);
+            // TODO: Move player to new position
+            //ChuckWoodSessionButton.transform.DOLocalMove(CharacterStartPosition, 0.2f);
         }
 
         currentPlayerData = playerData;
@@ -124,10 +125,10 @@ public class GameScreen : MonoBehaviour
         {
             return;
         }
-        
+
         var lastLoginTime = AnchorService.Instance.CurrentPlayerData.LastLogin;
         var timePassed = DateTimeOffset.UtcNow.ToUnixTimeSeconds() - lastLoginTime;
-        
+
         while (
             timePassed >= AnchorService.TIME_TO_REFILL_ENERGY &&
             AnchorService.Instance.CurrentPlayerData.Energy < AnchorService.MAX_ENERGY
@@ -147,18 +148,18 @@ public class GameScreen : MonoBehaviour
         {
             NextEnergyInText.text = "";
         }
-        
+
         EnergyAmountText.text = AnchorService.Instance.CurrentPlayerData.Energy.ToString();
-        WoodAmountText.text = AnchorService.Instance.CurrentPlayerData.Wood.ToString();
+        CurrentFloorText.text = AnchorService.Instance.CurrentPlayerData.CurrentFloor.ToString();
     }
 
-    private void OnChuckWoodSessionButtonClicked()
+    private void OnMovePlayerButtonClicked()
     {
         ChuckWoodSessionButton.transform.localPosition = CharacterStartPosition;
         ChuckWoodSessionButton.transform.DOLocalMove(CharacterStartPosition + Vector3.up * 10, 0.3f);
-        AnchorService.Instance.ChopTree(!Web3.Rpc.NodeAddress.AbsoluteUri.Contains("localhost"), () =>
+        AnchorService.Instance.MoveToTile(!Web3.Rpc.NodeAddress.AbsoluteUri.Contains("localhost"), () =>
         {
             // Do something with the result. The websocket update in onPlayerDataChanged will come a bit earlier
-        });
+        }, 1, 1);
     }
 }

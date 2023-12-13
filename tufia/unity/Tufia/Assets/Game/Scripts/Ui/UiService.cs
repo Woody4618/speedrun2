@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using Frictionless;
 using Game.Scripts.Ui;
 using UnityEngine;
+using UnityEngine.EventSystems;
 
 namespace Services
 {
@@ -15,7 +16,7 @@ namespace Services
             public BasePopup PopupPrefab;
             public ScreenType ScreenType;
         }
-        
+
         public enum ScreenType
         {
             TransferNftPopup = 0,
@@ -25,11 +26,11 @@ namespace Services
 
         public class UiData
         {
-            
+
         }
-        
+
         public List<UiRegistration> UiRegistrations = new List<UiRegistration>();
-        
+
         private readonly Dictionary<ScreenType, BasePopup> openPopups = new Dictionary<ScreenType, BasePopup>();
 
         public void Awake()
@@ -44,7 +45,7 @@ namespace Services
                 basePopup.Open(uiData);
                 return;
             }
-            
+
             foreach (var uiRegistration in UiRegistrations)
             {
                 if (uiRegistration.ScreenType == screenType)
@@ -55,8 +56,17 @@ namespace Services
                     return;
                 }
             }
-            
+
             Debug.LogWarning("There was no screen registration for " + screenType);
+        }
+
+        public static bool IsPointerOverUIObject()
+        {
+          PointerEventData eventDataCurrentPosition = new PointerEventData(EventSystem.current);
+          eventDataCurrentPosition.position = new Vector2(Input.mousePosition.x, Input.mousePosition.y);
+          List<RaycastResult> results = new List<RaycastResult>();
+          EventSystem.current.RaycastAll(eventDataCurrentPosition, results);
+          return results.Count > 0;
         }
 
         public IEnumerator HandleNewSceneLoaded()

@@ -1,6 +1,6 @@
 //! All instructions
-pub mod chop_tree;
 pub mod init_player;
+pub mod move_to_tile;
 
-pub use chop_tree::*;
 pub use init_player::*;
+pub use move_to_tile::*;

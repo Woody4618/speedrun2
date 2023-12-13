@@ -7,11 +7,23 @@ pub struct PlayerData {
     pub name: String,
     pub level: u8,
     pub xp: u64,
-    pub wood: u64,
+    pub health: u64,
+    pub damage: u64,
+    pub defence: u64,
+    pub swords: u64,
+    pub shields: u64,
     pub energy: u64,
     pub last_login: i64,
     pub last_id: u16,
+    pub current_floor: u16,
+    //pub inventory: Vec<Item>,
 }
+
+/*pub struct Item {
+    pub name: String,
+    pub defence: u64,
+    pub damage: u64,
+}*/
 
 impl PlayerData {
     pub fn print(&mut self) -> Result<()> {
@@ -19,7 +31,7 @@ impl PlayerData {
         msg!(
             "Authority: {} Wood: {} Energy: {}",
             self.authority,
-            self.wood,
+            self.health,
             self.energy
         );
         Ok(())
@@ -50,23 +62,7 @@ impl PlayerData {
         Ok(())
     }
 
-    pub fn chop_tree(&mut self, amount: u64) -> Result<()> {
-        match self.wood.checked_add(amount) {
-            Some(v) => {
-                self.wood = v;
-            }
-            None => {
-                msg!("Total wood reached!");
-            }
-        };
-        match self.energy.checked_sub(amount) {
-            Some(v) => {
-                self.energy = v;
-            }
-            None => {
-                self.energy = 0;
-            }
-        };
+    pub fn move_to_tile(&mut self, x: u64, y: u64, player: Pubkey) -> Result<()> {
         Ok(())
     }
 }
