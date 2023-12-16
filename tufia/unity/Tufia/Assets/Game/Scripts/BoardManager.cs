@@ -1,9 +1,14 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
+using Cysharp.Threading.Tasks;
+using DG.Tweening;
 using Frictionless;
+using Solana.Unity.Wallet;
 using SolPlay.Scripts.Ui;
 using Tufia.Accounts;
 using Tufia.Types;
+using Unity.VisualScripting;
 using UnityEngine;
 
 namespace DefaultNamespace
@@ -13,12 +18,11 @@ namespace DefaultNamespace
         public const int WIDTH = 10;
         public const int HEIGHT = 10;
 
-        public const int ACTION_TYPE_CHOP = 0;
-        public const int ACTION_TYPE_BUILD = 1;
-        public const int ACTION_TYPE_UPGRADE = 2;
-        public const int ACTION_TYPE_COLLECT = 3;
-        public const int ACTION_TYPE_FIGHT = 4;
-        public const int ACTION_TYPE_RESET = 5;
+        public const int ACTION_TYPE_MOVE = 0;
+        public const int ACTION_TYPE_FIGHT = 1;
+        public const int ACTION_TYPE_OPEN_CHEST = 2;
+        public const int ACTION_TYPE_RESET = 3;
+        public const int ACTION_TYPE_PLAYER_DIED = 4;
 
         public Tile TilePrefab;
         public Cell CellPrefab;
@@ -31,8 +35,7 @@ namespace DefaultNamespace
         public bool IsWaiting;
 
         private bool isInitialized;
-        // TODO: add actions
-        //private Dictionary<ulong, GameAction> alreadyPrerformedGameActions = new Dictionary<ulong, GameAction>();
+        private Dictionary<ulong, GameAction> alreadyPrerformedGameActions = new Dictionary<ulong, GameAction>();
         private bool HasPlayedInitialAnimations = false;
         private GameData CurrentBaordAccount;
 
@@ -45,8 +48,6 @@ namespace DefaultNamespace
         {
             AnchorService.OnPlayerDataChanged += OnPlayerDataChange;
             AnchorService.OnGameDataChanged += OnBoardDataChange;
-            // TODO: add actions
-            //AnchorService.OnGameActionHistoryChanged += OnGameActionHistoryChange;
 
             // Crete Cells
             for (int i = 0; i < WIDTH; i++)
@@ -54,7 +55,7 @@ namespace DefaultNamespace
                 for (int j = 0; j < HEIGHT; j++)
                 {
                     Cell cellInstance = Instantiate(CellPrefab, transform);
-                    cellInstance.transform.position = new Vector3(1.1f * i, 0, -1.1f * j);
+                    cellInstance.transform.position = new Vector3(1.02f * i, 0, -1.02f * j);
                     cellInstance.Init(i, j, null);
                     AllCells[i,j] = cellInstance;
                 }
@@ -65,8 +66,6 @@ namespace DefaultNamespace
         {
           AnchorService.OnPlayerDataChanged -= OnPlayerDataChange;
           AnchorService.OnGameDataChanged -= OnBoardDataChange;
-          // TODO: add actions
-          //AnchorService.OnGameActionHistoryChanged -= OnGameActionHistoryChange;
         }
 
         private void OnPlayerDataChange(PlayerData obj)
@@ -82,7 +81,6 @@ namespace DefaultNamespace
                 Destroy(tile.gameObject);
             }
             tiles.Clear();
-            // TODO: add actions
             //alreadyPrerformedGameActions.Clear();
             for (int i = 0; i < WIDTH; i++)
             {
@@ -93,82 +91,97 @@ namespace DefaultNamespace
             }
         }
 
-        private void OnBoardDataChange(GameData boardAccount)
+        private void OnBoardDataChange(GameData boardAccount, bool reset)
         {
+            if (boardAccount == null)
+            {
+              OnGameReset();
+              return;
+            }
             CurrentBaordAccount = boardAccount;
 
-            SetData(boardAccount);
+            OnGameActionHistoryChange(boardAccount, reset);
+            SetData(boardAccount, reset);
         }
 
-        // TODO: add actions
-        /*private async void OnGameActionHistoryChange(GameActionHistory gameActionHistory)
+        private async void OnGameActionHistoryChange(GameData gameData, bool reset)
         {
+            if (reset)
+            {
+              alreadyPrerformedGameActions.Clear();
+              HasPlayedInitialAnimations = false;
+            }
             if (!HasPlayedInitialAnimations)
             {
-                foreach (GameAction gameAction in gameActionHistory.GameActions)
+                foreach (GameAction gameAction in gameData.GameActions)
                 {
                     if (gameAction.ActionId == 0)
                     {
                         continue;
                     }
-                    alreadyPrerformedGameActions.Add(gameAction.ActionId, gameAction);
+
+                    if (alreadyPrerformedGameActions.ContainsKey(gameAction.ActionId))
+                    {
+                      alreadyPrerformedGameActions[gameAction.ActionId] = gameAction;
+                    }
+                    else
+                    {
+                      alreadyPrerformedGameActions.Add(gameAction.ActionId, gameAction);
+                    }
                 }
 
                 HasPlayedInitialAnimations = true;
                 return;
             }
 
-            foreach (GameAction gameAction in gameActionHistory.GameActions)
+            foreach (GameAction gameAction in gameData.GameActions)
             {
                 if (!alreadyPrerformedGameActions.ContainsKey(gameAction.ActionId))
                 {
-                    var targetCell = GetCell(gameAction.X, gameAction.Y);
+                    var targetCell = GetCell(gameAction.ToX, gameAction.ToY);
 
-                    if (gameAction.ActionType == ACTION_TYPE_CHOP)
+                    Debug.Log($"Target Cell: {targetCell.X} {targetCell.Y}");
+                    if (gameAction.ActionType == ACTION_TYPE_MOVE)
                     {
+                        var fromCell = GetCell(gameAction.FromX, gameAction.FromY);
+                        Debug.Log($"From Cell: {fromCell.X} {fromCell.Y}");
+
                         var tileConfig = FindTileConfigByTileData(gameAction.Tile);
-                        targetCell.Tile.Init(tileConfig, gameAction.Tile, true);
+                        targetCell.Tile.Init(tileConfig, gameAction.Tile, false);
+
+                        var emptyConfig = FindTileConfigByName("Empty");
+                        fromCell.Tile.Init(emptyConfig, new TileData(), false);
+
+                        fromCell.Tile.transform.DOKill();
+                        fromCell.Tile.transform.DOMove(targetCell.transform.position, 0.3f).OnComplete(() =>
+                        {
+                          var tileConfig = FindTileConfigByTileData(gameAction.Tile);
+                          targetCell.Tile.Init(tileConfig, gameAction.Tile, true);
+                          targetCell.Tile.transform.position = targetCell.transform.position;
+
+                          var emptyConfig = FindTileConfigByName("Empty");
+                          fromCell.Tile.Init(emptyConfig, new TileData(), true);
+                          fromCell.Tile.transform.position = fromCell.transform.position;
+                        });
+
+                        // TODO: Animate and kill the last item
+                        //var fromCell = GetCell(gameAction.FromX, gameAction.FromY);
+                        //fromCell.Tile = null;
                     }
 
-                    if (gameAction.ActionType == ACTION_TYPE_BUILD)
+                    if (gameAction.ActionType == ACTION_TYPE_FIGHT)
                     {
-                        var tileConfig = FindTileConfigByTileData(gameAction.Tile);
-                        targetCell.Tile.Init(tileConfig, gameAction.Tile, true);
+                        // nothin
                     }
 
-                    if (gameAction.ActionType == ACTION_TYPE_UPGRADE)
+                    if (gameAction.ActionType == ACTION_TYPE_OPEN_CHEST)
                     {
-                        var tileConfig = FindTileConfigByTileData(gameAction.Tile);
-                        targetCell.Tile.Init(tileConfig, gameAction.Tile, true);
+                        // nothin
                     }
 
-                    if (gameAction.ActionType == ACTION_TYPE_COLLECT)
+                    if (gameAction.ActionType == ACTION_TYPE_RESET)
                     {
-                        var blimp = Instantiate(CoinBlimpPrefab);
-
-                        var tileConfig = FindTileConfigByTileData(gameAction.Tile);
-                        blimp.SetData(gameAction.Amount.ToString(), null, tileConfig);
-                        targetCell.Tile.Init(tileConfig, gameAction.Tile, true);
-                        blimp.transform.position = targetCell.transform.position;
-                        Nft nft = null;
-                        try
-                        {
-                            var rpc = Web3.Wallet.ActiveRpcClient;
-                            nft  = await Nft.TryGetNftData(gameAction.Avatar, rpc).AsUniTask();
-                        }
-                        catch (Exception e)
-                        {
-                            Debug.LogError("Could not load nft" + e);
-                        }
-
-                        if (nft == null)
-                        {
-                            nft = ServiceFactory.Resolve<NftService>().CreateDummyLocalNft(gameAction.Avatar);
-                        }
-
-                        blimp.SetData(gameAction.Amount.ToString(), nft, tileConfig);
-                        blimp.AddComponent<DestroyDelayed>();
-                        Debug.Log("Is collectable: " + LumberjackService.IsCollectable(gameAction.Tile));
+                        // todo
                     }
 
                     if (gameAction.ActionType == ACTION_TYPE_FIGHT)
@@ -176,14 +189,15 @@ namespace DefaultNamespace
                         PerformFightAction(gameAction, targetCell);
                     }
 
-                    if (gameAction.ActionType == ACTION_TYPE_RESET)
+                    if (gameAction.ActionType == ACTION_TYPE_PLAYER_DIED)
                     {
-                        if (CurrentBaordAccount.EvilWon || CurrentBaordAccount.GoodWon)
-                        {
-                            OnGameReset();
-                            CreateStartingTiles(CurrentBaordAccount);
-                            isInitialized = false;
-                        }
+                        OnGameReset();
+                        await AnchorService.Instance.SubscribeToPlayerDataUpdates();
+                        await AnchorService.Instance.UnSubscribeToGameDataUpdates(true);
+                        await AnchorService.Instance.SubscribeToGameDataUpdates(true);
+                        //CreateStartingTiles(CurrentBaordAccount);
+                        isInitialized = false;
+                        return;
                     }
 
                     alreadyPrerformedGameActions.Add(gameAction.ActionId, gameAction);
@@ -199,7 +213,8 @@ namespace DefaultNamespace
             targetCell.Tile.GetComponentInChildren<Animator>().Play("Attack");
             await UniTask.Delay(800);
 
-            Nft nft = null;
+            // TODO: DO we want an nft as character?
+            /*Nft nft = null;
             try
             {
                 var rpc = Web3.Wallet.ActiveRpcClient;
@@ -216,14 +231,14 @@ namespace DefaultNamespace
             }
 
             var blimp = Instantiate(FightBlimp);
-            //blimp.SetData(text, null, tileConfig);
+            blimp.SetData(text, null, tileConfig);
             blimp.transform.position = targetCell.transform.position + new Vector3(0, 1.89f, -1.88f);
 
             blimp.SetData(text, nft, tileConfig);
-            blimp.AddComponent<DestroyDelayed>();
+            blimp.AddComponent<DestroyDelayed>();*/
         }
-*/
-        public void SetData(GameData boardAccount)
+
+        public void SetData(GameData boardAccount, bool reset)
         {
             if (!isInitialized)
             {
@@ -233,6 +248,11 @@ namespace DefaultNamespace
             }
             else
             {
+              if (reset)
+              {
+                OnGameReset();
+                CreateStartingTiles(boardAccount);
+              }
                 //SpawnNewTile(playerData.NewTileX, playerData.NewTileY, playerData.NewTileLevel);
             }
 
@@ -242,20 +262,23 @@ namespace DefaultNamespace
             {
                 for (int j = 0; j < HEIGHT; j++)
                 {
-                    if (boardAccount.Data[j][i].TileType != 0 && GetCell(i, j).Tile == null)
+                    var cell = GetCell(j, i);
+                    if (boardAccount.Data[j][i].TileType != 0 && cell.Tile == null)
                     {
                         anyTileOutOfSync = true;
                         Debug.LogWarning("Tiles out of sync.");
                     }else
-                    if (boardAccount.Data[j][i].TileType != GetCell(i, j).Tile.currentConfig.building_type)
                     {
+                      if (boardAccount.Data[j][i].TileType != cell.Tile.currentConfig.building_type)
+                      {
                         anyTileOutOfSync = true;
                         Debug.LogWarning($"Tiles out of sync. x {i} y {j} from socket: {boardAccount.Data[j][i]} board: {GetCell(i, j).Tile.currentConfig.Number} ");
+                      }
                     }
                 }
             }
 
-            if (anyTileOutOfSync)
+            if (anyTileOutOfSync || reset)
             {
                 RefreshFromPlayerdata(CurrentBaordAccount);
                 return;
@@ -274,11 +297,26 @@ namespace DefaultNamespace
 
         public Cell GetCell(int x, int y)
         {
-            if (x >= 0 && x < WIDTH && y >= 0 && y < HEIGHT) {
-                return AllCells[x, y];
-            }
+          if (x >= 0 && x < WIDTH && y >= 0 && y < HEIGHT) {
+            return AllCells[x, y];
+          }
 
-            return null;
+          return null;
+        }
+
+        public Cell GetCellByOwner(PublicKey owner)
+        {
+          foreach (var cell in AllCells)
+          {
+            if (cell.Tile != null && cell.Tile.currentTileData != null &&
+                cell.Tile.currentTileData.TileOwner == owner &&
+                cell.Tile.currentTileData.TileType == AnchorService.BUILDING_TYPE_PLAYER)
+            {
+              return cell;
+            }
+          }
+
+          return null;
         }
 
         public Cell GetAdjacentCell(Cell cell, Vector2Int direction)
@@ -318,7 +356,7 @@ namespace DefaultNamespace
             }
         }
 
-        private void SpawnNewTile(int i, int j, TileData tileData, Color? overrideColor = null)
+        private void SpawnNewTile(int i, int j, TileData tileData)
         {
             var targetCell = GetCell(i, j);
             if (targetCell.Tile != null)
@@ -338,11 +376,6 @@ namespace DefaultNamespace
 
             tileInstance.transform.position = targetCell.transform.position;
             TileConfig newConfig = FindTileConfigByTileData(tileData);
-            if (overrideColor != null)
-            {
-                newConfig.MaterialColor = overrideColor.Value;
-                //EditorUtility.SetDirty(newConfig);
-            }
 
             tileInstance.Init(newConfig, tileData);
             tileInstance.Spawn(targetCell);

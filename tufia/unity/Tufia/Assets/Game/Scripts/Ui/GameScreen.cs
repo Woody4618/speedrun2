@@ -1,6 +1,5 @@
 using System;
 using System.Collections;
-using Cysharp.Threading.Tasks;
 using DG.Tweening;
 using Frictionless;
 using Tufia.Accounts;
@@ -18,6 +17,8 @@ using UnityEngine.UI;
 public class GameScreen : MonoBehaviour
 {
     public Button ChuckWoodSessionButton;
+    public Button ResetFloorButton;
+    public Button BuyFloorButton;
     public Button NftsButton;
     public Button InitGameDataButton;
 
@@ -40,6 +41,8 @@ public class GameScreen : MonoBehaviour
     {
         ChuckWoodSessionButton.onClick.AddListener(OnMovePlayerButtonClicked);
         NftsButton.onClick.AddListener(OnNftsButtonClicked);
+        ResetFloorButton.onClick.AddListener(OnResetFloorButtonClicked);
+        BuyFloorButton.onClick.AddListener(OnBuyFloorButtonClicked);
         InitGameDataButton.onClick.AddListener(OnInitGameDataButtonClicked);
         CharacterStartPosition = ChuckWoodSessionButton.transform.localPosition;
         // In case we are not logged in yet load the LoginScene
@@ -99,8 +102,14 @@ public class GameScreen : MonoBehaviour
         UpdateContent();
     }
 
-    private void OnGameDataChanged(GameData gameData)
+    private void OnGameDataChanged(GameData gameData, bool reset)
     {
+        if (gameData == null)
+        {
+          currentGameData = gameData;
+          return;
+        }
+
         if (currentGameData != null && currentGameData.TotalWoodCollected != gameData.TotalWoodCollected)
         {
             Tree.transform.DOKill();
@@ -161,5 +170,18 @@ public class GameScreen : MonoBehaviour
         {
             // Do something with the result. The websocket update in onPlayerDataChanged will come a bit earlier
         }, 1, 1);
+    }
+
+    private void OnResetFloorButtonClicked()
+    {
+        AnchorService.Instance.ResetFloor();
+    }
+
+    private void OnBuyFloorButtonClicked()
+    {
+        AnchorService.Instance.BuyNewFloor(() =>
+        {
+
+        });
     }
 }

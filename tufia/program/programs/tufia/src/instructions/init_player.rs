@@ -5,6 +5,11 @@ use anchor_lang::prelude::*;
 
 pub fn init_player(ctx: Context<InitPlayer>) -> Result<()> {
     ctx.accounts.player.energy = MAX_ENERGY;
+    ctx.accounts.player.health = 10;
+    ctx.accounts.player.max_health = 10;
+    ctx.accounts.player.level = 1;
+    ctx.accounts.player.damage = 1;
+
     ctx.accounts.player.last_login = Clock::get()?.unix_timestamp;
     ctx.accounts.player.authority = ctx.accounts.signer.key();
     Ok(())
@@ -25,7 +30,7 @@ pub struct InitPlayer<'info> {
     #[account(
         init_if_needed,
         payer = signer,
-        space = 10000, // 8 + all the tiles a game config
+        space = 10240, // 8 + all the tiles a game config
         seeds = [level_seed.as_ref()],
         bump,
     )]

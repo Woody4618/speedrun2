@@ -16,4 +16,7 @@ pub enum GameErrorCode {
 
     #[msg("BoardIsFull")]
     BoardIsFull,
+
+    #[msg("PlayerIsAlreadyOnThisTile")]
+    PlayerIsAlreadyOnThisTile,
 }

@@ -33,4 +33,40 @@ pub mod tufia {
     ) -> Result<()> {
         move_to_tile::move_to_tile(ctx, counter, x, y)
     }
+
+    // This function moves the player to a new tile if he is on the board.
+    // TODO: add enemies and chests
+    #[session_auth_or(
+        ctx.accounts.player.authority.key() == ctx.accounts.signer.key(),
+        GameErrorCode::WrongAuthority
+    )]
+    pub fn move_to_next_floor(
+        ctx: Context<NextFloor>,
+        _level_seed: String,
+        counter: u16,
+    ) -> Result<()> {
+        next_floor::next_floor(ctx, counter)
+    }
+
+    #[session_auth_or(
+        ctx.accounts.player.authority.key() == ctx.accounts.signer.key(),
+        GameErrorCode::WrongAuthority
+    )]
+    pub fn buy_next_floor(
+        ctx: Context<BuyNextFloor>,
+        _level_seed: String,
+        counter: u16,
+    ) -> Result<()> {
+        buy_next_floor::buy_next_floor(ctx, counter, _level_seed)
+    }
+
+    // This function moves the player to a new tile if he is on the board.
+    // TODO: add enemies and chests
+    #[session_auth_or(
+        ctx.accounts.player.authority.key() == ctx.accounts.signer.key(),
+        GameErrorCode::WrongAuthority
+    )]
+    pub fn reset_floor(ctx: Context<ResetFloor>, _level_seed: String, counter: u16) -> Result<()> {
+        reset_floor::reset_floor(ctx, counter)
+    }
 }

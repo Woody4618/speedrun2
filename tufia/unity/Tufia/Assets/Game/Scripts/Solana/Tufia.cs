@@ -27,9 +27,19 @@ namespace Tufia
             public static ulong ACCOUNT_DISCRIMINATOR => 13758009850765924589UL;
             public static ReadOnlySpan<byte> ACCOUNT_DISCRIMINATOR_BYTES => new byte[]{237, 88, 58, 243, 16, 69, 238, 190};
             public static string ACCOUNT_DISCRIMINATOR_B58 => "ghYLwVtPH73";
+            public ulong IdCounter { get; set; }
+
+            public ulong ActionIndex { get; set; }
+
             public TileData[][] Data { get; set; }
 
             public ulong TotalWoodCollected { get; set; }
+
+            public GameAction[] GameActions { get; set; }
+
+            public uint FloorId { get; set; }
+
+            public PublicKey Owner { get; set; }
 
             public static GameData Deserialize(ReadOnlySpan<byte> _data)
             {
@@ -42,6 +52,10 @@ namespace Tufia
                 }
 
                 GameData result = new GameData();
+                result.IdCounter = _data.GetU64(offset);
+                offset += 8;
+                result.ActionIndex = _data.GetU64(offset);
+                offset += 8;
                 result.Data = new TileData[10][];
                 for (uint resultDataIdx = 0; resultDataIdx < 10; resultDataIdx++)
                 {
@@ -55,6 +69,17 @@ namespace Tufia
 
                 result.TotalWoodCollected = _data.GetU64(offset);
                 offset += 8;
+                result.GameActions = new GameAction[20];
+                for (uint resultGameActionsIdx = 0; resultGameActionsIdx < 20; resultGameActionsIdx++)
+                {
+                    offset += GameAction.Deserialize(_data, offset, out var resultGameActionsresultGameActionsIdx);
+                    result.GameActions[resultGameActionsIdx] = resultGameActionsresultGameActionsIdx;
+                }
+
+                result.FloorId = _data.GetU32(offset);
+                offset += 4;
+                result.Owner = _data.GetPubKey(offset);
+                offset += 32;
                 return result;
             }
         }
@@ -68,27 +93,31 @@ namespace Tufia
 
             public string Name { get; set; }
 
-            public byte Level { get; set; }
+            public uint Level { get; set; }
 
-            public ulong Xp { get; set; }
+            public uint Xp { get; set; }
 
-            public ulong Health { get; set; }
+            public uint Health { get; set; }
 
-            public ulong Damage { get; set; }
+            public uint MaxHealth { get; set; }
 
-            public ulong Defence { get; set; }
+            public uint Damage { get; set; }
 
-            public ulong Swords { get; set; }
+            public uint Defence { get; set; }
 
-            public ulong Shields { get; set; }
+            public uint Swords { get; set; }
 
-            public ulong Energy { get; set; }
+            public uint Shields { get; set; }
+
+            public uint Energy { get; set; }
 
             public long LastLogin { get; set; }
 
             public ushort LastId { get; set; }
 
             public ushort CurrentFloor { get; set; }
+
+            public TileData2 TileData { get; set; }
 
             public static PlayerData Deserialize(ReadOnlySpan<byte> _data)
             {
@@ -105,28 +134,32 @@ namespace Tufia
                 offset += 32;
                 offset += _data.GetBorshString(offset, out var resultName);
                 result.Name = resultName;
-                result.Level = _data.GetU8(offset);
-                offset += 1;
-                result.Xp = _data.GetU64(offset);
-                offset += 8;
-                result.Health = _data.GetU64(offset);
-                offset += 8;
-                result.Damage = _data.GetU64(offset);
-                offset += 8;
-                result.Defence = _data.GetU64(offset);
-                offset += 8;
-                result.Swords = _data.GetU64(offset);
-                offset += 8;
-                result.Shields = _data.GetU64(offset);
-                offset += 8;
-                result.Energy = _data.GetU64(offset);
-                offset += 8;
+                result.Level = _data.GetU32(offset);
+                offset += 4;
+                result.Xp = _data.GetU32(offset);
+                offset += 4;
+                result.Health = _data.GetU32(offset);
+                offset += 4;
+                result.MaxHealth = _data.GetU32(offset);
+                offset += 4;
+                result.Damage = _data.GetU32(offset);
+                offset += 4;
+                result.Defence = _data.GetU32(offset);
+                offset += 4;
+                result.Swords = _data.GetU32(offset);
+                offset += 4;
+                result.Shields = _data.GetU32(offset);
+                offset += 4;
+                result.Energy = _data.GetU32(offset);
+                offset += 4;
                 result.LastLogin = _data.GetS64(offset);
                 offset += 8;
                 result.LastId = _data.GetU16(offset);
                 offset += 2;
                 result.CurrentFloor = _data.GetU16(offset);
                 offset += 2;
+                offset += TileData2.Deserialize(_data, offset, out var resultTileData);
+                result.TileData = resultTileData;
                 return result;
             }
         }
@@ -141,45 +174,121 @@ namespace Tufia
             PlayerNotOnBoard = 6002U,
             OutOfBounds = 6003U,
             PlayerAlreadyExists = 6004U,
-            BoardIsFull = 6005U
+            BoardIsFull = 6005U,
+            PlayerIsAlreadyOnThisTile = 6006U
         }
     }
 
     namespace Types
     {
+        public partial class GameAction
+        {
+            public ulong ActionId { get; set; }
+
+            public byte ActionType { get; set; }
+
+            public byte FromX { get; set; }
+
+            public byte FromY { get; set; }
+
+            public byte ToX { get; set; }
+
+            public byte ToY { get; set; }
+
+            public TileData Tile { get; set; }
+
+            public ulong Amount { get; set; }
+
+            public int Serialize(byte[] _data, int initialOffset)
+            {
+                int offset = initialOffset;
+                _data.WriteU64(ActionId, offset);
+                offset += 8;
+                _data.WriteU8(ActionType, offset);
+                offset += 1;
+                _data.WriteU8(FromX, offset);
+                offset += 1;
+                _data.WriteU8(FromY, offset);
+                offset += 1;
+                _data.WriteU8(ToX, offset);
+                offset += 1;
+                _data.WriteU8(ToY, offset);
+                offset += 1;
+                offset += Tile.Serialize(_data, offset);
+                _data.WriteU64(Amount, offset);
+                offset += 8;
+                return offset - initialOffset;
+            }
+
+            public static int Deserialize(ReadOnlySpan<byte> _data, int initialOffset, out GameAction result)
+            {
+                int offset = initialOffset;
+                result = new GameAction();
+                result.ActionId = _data.GetU64(offset);
+                offset += 8;
+                result.ActionType = _data.GetU8(offset);
+                offset += 1;
+                result.FromX = _data.GetU8(offset);
+                offset += 1;
+                result.FromY = _data.GetU8(offset);
+                offset += 1;
+                result.ToX = _data.GetU8(offset);
+                offset += 1;
+                result.ToY = _data.GetU8(offset);
+                offset += 1;
+                offset += TileData.Deserialize(_data, offset, out var resultTile);
+                result.Tile = resultTile;
+                result.Amount = _data.GetU64(offset);
+                offset += 8;
+                return offset - initialOffset;
+            }
+        }
+
         public partial class TileData
         {
             public byte TileType { get; set; }
 
-            public byte TileLevel { get; set; }
+            public uint TileLevel { get; set; }
 
             public PublicKey TileOwner { get; set; }
 
-            public ulong TileXp { get; set; }
+            public uint TileXp { get; set; }
 
-            public ulong TileDamage { get; set; }
+            public uint TileDamage { get; set; }
 
-            public ulong TileDefence { get; set; }
+            public uint TileDefence { get; set; }
 
-            public ulong TileHealth { get; set; }
+            public uint TileArmor { get; set; }
+
+            public uint TileMaxArmor { get; set; }
+
+            public uint TileHealth { get; set; }
+
+            public uint TileMaxHealth { get; set; }
 
             public int Serialize(byte[] _data, int initialOffset)
             {
                 int offset = initialOffset;
                 _data.WriteU8(TileType, offset);
                 offset += 1;
-                _data.WriteU8(TileLevel, offset);
-                offset += 1;
+                _data.WriteU32(TileLevel, offset);
+                offset += 4;
                 _data.WritePubKey(TileOwner, offset);
                 offset += 32;
-                _data.WriteU64(TileXp, offset);
-                offset += 8;
-                _data.WriteU64(TileDamage, offset);
-                offset += 8;
-                _data.WriteU64(TileDefence, offset);
-                offset += 8;
-                _data.WriteU64(TileHealth, offset);
-                offset += 8;
+                _data.WriteU32(TileXp, offset);
+                offset += 4;
+                _data.WriteU32(TileDamage, offset);
+                offset += 4;
+                _data.WriteU32(TileDefence, offset);
+                offset += 4;
+                _data.WriteU32(TileArmor, offset);
+                offset += 4;
+                _data.WriteU32(TileMaxArmor, offset);
+                offset += 4;
+                _data.WriteU32(TileHealth, offset);
+                offset += 4;
+                _data.WriteU32(TileMaxHealth, offset);
+                offset += 4;
                 return offset - initialOffset;
             }
 
@@ -189,18 +298,100 @@ namespace Tufia
                 result = new TileData();
                 result.TileType = _data.GetU8(offset);
                 offset += 1;
-                result.TileLevel = _data.GetU8(offset);
-                offset += 1;
+                result.TileLevel = _data.GetU32(offset);
+                offset += 4;
                 result.TileOwner = _data.GetPubKey(offset);
                 offset += 32;
-                result.TileXp = _data.GetU64(offset);
-                offset += 8;
-                result.TileDamage = _data.GetU64(offset);
-                offset += 8;
-                result.TileDefence = _data.GetU64(offset);
-                offset += 8;
-                result.TileHealth = _data.GetU64(offset);
-                offset += 8;
+                result.TileXp = _data.GetU32(offset);
+                offset += 4;
+                result.TileDamage = _data.GetU32(offset);
+                offset += 4;
+                result.TileDefence = _data.GetU32(offset);
+                offset += 4;
+                result.TileArmor = _data.GetU32(offset);
+                offset += 4;
+                result.TileMaxArmor = _data.GetU32(offset);
+                offset += 4;
+                result.TileHealth = _data.GetU32(offset);
+                offset += 4;
+                result.TileMaxHealth = _data.GetU32(offset);
+                offset += 4;
+                return offset - initialOffset;
+            }
+        }
+
+        public partial class TileData2
+        {
+            public byte TileType { get; set; }
+
+            public uint TileLevel { get; set; }
+
+            public PublicKey TileOwner { get; set; }
+
+            public uint TileXp { get; set; }
+
+            public uint TileDamage { get; set; }
+
+            public uint TileDefence { get; set; }
+
+            public uint TileArmor { get; set; }
+
+            public uint TileMaxArmor { get; set; }
+
+            public uint TileHealth { get; set; }
+
+            public uint TileMaxHealth { get; set; }
+
+            public int Serialize(byte[] _data, int initialOffset)
+            {
+                int offset = initialOffset;
+                _data.WriteU8(TileType, offset);
+                offset += 1;
+                _data.WriteU32(TileLevel, offset);
+                offset += 4;
+                _data.WritePubKey(TileOwner, offset);
+                offset += 32;
+                _data.WriteU32(TileXp, offset);
+                offset += 4;
+                _data.WriteU32(TileDamage, offset);
+                offset += 4;
+                _data.WriteU32(TileDefence, offset);
+                offset += 4;
+                _data.WriteU32(TileArmor, offset);
+                offset += 4;
+                _data.WriteU32(TileMaxArmor, offset);
+                offset += 4;
+                _data.WriteU32(TileHealth, offset);
+                offset += 4;
+                _data.WriteU32(TileMaxHealth, offset);
+                offset += 4;
+                return offset - initialOffset;
+            }
+
+            public static int Deserialize(ReadOnlySpan<byte> _data, int initialOffset, out TileData2 result)
+            {
+                int offset = initialOffset;
+                result = new TileData2();
+                result.TileType = _data.GetU8(offset);
+                offset += 1;
+                result.TileLevel = _data.GetU32(offset);
+                offset += 4;
+                result.TileOwner = _data.GetPubKey(offset);
+                offset += 32;
+                result.TileXp = _data.GetU32(offset);
+                offset += 4;
+                result.TileDamage = _data.GetU32(offset);
+                offset += 4;
+                result.TileDefence = _data.GetU32(offset);
+                offset += 4;
+                result.TileArmor = _data.GetU32(offset);
+                offset += 4;
+                result.TileMaxArmor = _data.GetU32(offset);
+                offset += 4;
+                result.TileHealth = _data.GetU32(offset);
+                offset += 4;
+                result.TileMaxHealth = _data.GetU32(offset);
+                offset += 4;
                 return offset - initialOffset;
             }
         }
@@ -288,9 +479,27 @@ namespace Tufia
             return await SignAndSendTransaction(instr, feePayer, signingCallback);
         }
 
+        public async Task<RequestResult<string>> SendMoveToNextFloorAsync(MoveToNextFloorAccounts accounts, string levelSeed, ushort counter, PublicKey feePayer, Func<byte[], PublicKey, byte[]> signingCallback, PublicKey programId)
+        {
+            Solana.Unity.Rpc.Models.TransactionInstruction instr = Program.TufiaProgram.MoveToNextFloor(accounts, levelSeed, counter, programId);
+            return await SignAndSendTransaction(instr, feePayer, signingCallback);
+        }
+
+        public async Task<RequestResult<string>> SendBuyNextFloorAsync(BuyNextFloorAccounts accounts, string levelSeed, ushort counter, PublicKey feePayer, Func<byte[], PublicKey, byte[]> signingCallback, PublicKey programId)
+        {
+            Solana.Unity.Rpc.Models.TransactionInstruction instr = Program.TufiaProgram.BuyNextFloor(accounts, levelSeed, counter, programId);
+            return await SignAndSendTransaction(instr, feePayer, signingCallback);
+        }
+
+        public async Task<RequestResult<string>> SendResetFloorAsync(ResetFloorAccounts accounts, string levelSeed, ushort counter, PublicKey feePayer, Func<byte[], PublicKey, byte[]> signingCallback, PublicKey programId)
+        {
+            Solana.Unity.Rpc.Models.TransactionInstruction instr = Program.TufiaProgram.ResetFloor(accounts, levelSeed, counter, programId);
+            return await SignAndSendTransaction(instr, feePayer, signingCallback);
+        }
+
         protected override Dictionary<uint, ProgramError<TufiaErrorKind>> BuildErrorsDictionary()
         {
-            return new Dictionary<uint, ProgramError<TufiaErrorKind>>{{6000U, new ProgramError<TufiaErrorKind>(TufiaErrorKind.NotEnoughEnergy, "Not enough energy")}, {6001U, new ProgramError<TufiaErrorKind>(TufiaErrorKind.WrongAuthority, "Wrong Authority")}, {6002U, new ProgramError<TufiaErrorKind>(TufiaErrorKind.PlayerNotOnBoard, "Player not on board")}, {6003U, new ProgramError<TufiaErrorKind>(TufiaErrorKind.OutOfBounds, "Out of bounds")}, {6004U, new ProgramError<TufiaErrorKind>(TufiaErrorKind.PlayerAlreadyExists, "PlayerAlreadyExists")}, {6005U, new ProgramError<TufiaErrorKind>(TufiaErrorKind.BoardIsFull, "BoardIsFull")}, };
+            return new Dictionary<uint, ProgramError<TufiaErrorKind>>{{6000U, new ProgramError<TufiaErrorKind>(TufiaErrorKind.NotEnoughEnergy, "Not enough energy")}, {6001U, new ProgramError<TufiaErrorKind>(TufiaErrorKind.WrongAuthority, "Wrong Authority")}, {6002U, new ProgramError<TufiaErrorKind>(TufiaErrorKind.PlayerNotOnBoard, "Player not on board")}, {6003U, new ProgramError<TufiaErrorKind>(TufiaErrorKind.OutOfBounds, "Out of bounds")}, {6004U, new ProgramError<TufiaErrorKind>(TufiaErrorKind.PlayerAlreadyExists, "PlayerAlreadyExists")}, {6005U, new ProgramError<TufiaErrorKind>(TufiaErrorKind.BoardIsFull, "BoardIsFull")}, {6006U, new ProgramError<TufiaErrorKind>(TufiaErrorKind.PlayerIsAlreadyOnThisTile, "PlayerIsAlreadyOnThisTile")}, };
         }
     }
 
@@ -308,6 +517,45 @@ namespace Tufia
         }
 
         public class MoveToTileAccounts
+        {
+            public PublicKey SessionToken { get; set; }
+
+            public PublicKey Player { get; set; }
+
+            public PublicKey GameData { get; set; }
+
+            public PublicKey Signer { get; set; }
+
+            public PublicKey SystemProgram { get; set; }
+        }
+
+        public class MoveToNextFloorAccounts
+        {
+            public PublicKey SessionToken { get; set; }
+
+            public PublicKey Player { get; set; }
+
+            public PublicKey GameData { get; set; }
+
+            public PublicKey Signer { get; set; }
+
+            public PublicKey SystemProgram { get; set; }
+        }
+
+        public class BuyNextFloorAccounts
+        {
+            public PublicKey SessionToken { get; set; }
+
+            public PublicKey Player { get; set; }
+
+            public PublicKey GameData { get; set; }
+
+            public PublicKey Signer { get; set; }
+
+            public PublicKey SystemProgram { get; set; }
+        }
+
+        public class ResetFloorAccounts
         {
             public PublicKey SessionToken { get; set; }
 
@@ -351,6 +599,54 @@ namespace Tufia
                 offset += 8;
                 _data.WriteU64(y, offset);
                 offset += 8;
+                byte[] resultData = new byte[offset];
+                Array.Copy(_data, resultData, offset);
+                return new Solana.Unity.Rpc.Models.TransactionInstruction{Keys = keys, ProgramId = programId.KeyBytes, Data = resultData};
+            }
+
+            public static Solana.Unity.Rpc.Models.TransactionInstruction MoveToNextFloor(MoveToNextFloorAccounts accounts, string levelSeed, ushort counter, PublicKey programId)
+            {
+                List<Solana.Unity.Rpc.Models.AccountMeta> keys = new()
+                {Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SessionToken == null ? programId : accounts.SessionToken, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Player, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.GameData, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Signer, true), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SystemProgram, false)};
+                byte[] _data = new byte[1200];
+                int offset = 0;
+                _data.WriteU64(2481710203484716370UL, offset);
+                offset += 8;
+                offset += _data.WriteBorshString(levelSeed, offset);
+                _data.WriteU16(counter, offset);
+                offset += 2;
+                byte[] resultData = new byte[offset];
+                Array.Copy(_data, resultData, offset);
+                return new Solana.Unity.Rpc.Models.TransactionInstruction{Keys = keys, ProgramId = programId.KeyBytes, Data = resultData};
+            }
+
+            public static Solana.Unity.Rpc.Models.TransactionInstruction BuyNextFloor(BuyNextFloorAccounts accounts, string levelSeed, ushort counter, PublicKey programId)
+            {
+                List<Solana.Unity.Rpc.Models.AccountMeta> keys = new()
+                {Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SessionToken == null ? programId : accounts.SessionToken, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Player, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.GameData, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Signer, true), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SystemProgram, false)};
+                byte[] _data = new byte[1200];
+                int offset = 0;
+                _data.WriteU64(7033119409976356332UL, offset);
+                offset += 8;
+                offset += _data.WriteBorshString(levelSeed, offset);
+                _data.WriteU16(counter, offset);
+                offset += 2;
+                byte[] resultData = new byte[offset];
+                Array.Copy(_data, resultData, offset);
+                return new Solana.Unity.Rpc.Models.TransactionInstruction{Keys = keys, ProgramId = programId.KeyBytes, Data = resultData};
+            }
+
+            public static Solana.Unity.Rpc.Models.TransactionInstruction ResetFloor(ResetFloorAccounts accounts, string levelSeed, ushort counter, PublicKey programId)
+            {
+                List<Solana.Unity.Rpc.Models.AccountMeta> keys = new()
+                {Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SessionToken == null ? programId : accounts.SessionToken, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Player, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.GameData, false), Solana.Unity.Rpc.Models.AccountMeta.Writable(accounts.Signer, true), Solana.Unity.Rpc.Models.AccountMeta.ReadOnly(accounts.SystemProgram, false)};
+                byte[] _data = new byte[1200];
+                int offset = 0;
+                _data.WriteU64(7303134863959624869UL, offset);
+                offset += 8;
+                offset += _data.WriteBorshString(levelSeed, offset);
+                _data.WriteU16(counter, offset);
+                offset += 2;
                 byte[] resultData = new byte[offset];
                 Array.Copy(_data, resultData, offset);
                 return new Solana.Unity.Rpc.Models.TransactionInstruction{Keys = keys, ProgramId = programId.KeyBytes, Data = resultData};

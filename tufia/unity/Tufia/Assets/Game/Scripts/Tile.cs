@@ -14,7 +14,7 @@ public class Tile : MonoBehaviour
 
     public Cell Cell;
     private Vector3 originalScale;
-    private GameObject Model;
+    public GameObject Model;
 
     private void Awake()
     {
@@ -54,7 +54,7 @@ public class Tile : MonoBehaviour
         var healthbar = GetComponentInChildren<HealthBar>(true);
         if (healthbar != null)
         {
-            healthbar.SetData((int) currentTileData.TileHealth, 100);
+            healthbar.SetData(currentTileData);
         }
     }
 

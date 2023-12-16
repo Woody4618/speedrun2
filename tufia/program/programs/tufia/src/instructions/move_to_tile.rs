@@ -52,7 +52,7 @@ pub struct MoveToTile<'info> {
     #[account(
         init_if_needed,
         payer = signer,
-        space = 10000,
+        space = 10240,
         seeds = [level_seed.as_ref()],
         bump,
     )]

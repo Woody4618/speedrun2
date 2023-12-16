@@ -20,7 +20,7 @@ MonoBehaviour:
   MaterialColor: {r: 0, g: 0, b: 0, a: 0}
   BackgroundMaterial: {fileID: 0}
   Index: 0
-  building_type: 3
+  building_type: 4
   BuildingName: 
   Icon: {fileID: 0}
   IsBuildable: 0

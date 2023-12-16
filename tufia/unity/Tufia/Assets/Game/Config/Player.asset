@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: Player
   m_EditorClassIdentifier: 
   Number: 0
-  Prefab: {fileID: 1509320704378930833, guid: c0d4150b942b04f0a96a236266b5b5fe, type: 3}
+  Prefab: {fileID: 1509320704378930833, guid: 0f520a21aa9c54f9d8edfc6b886f12a3, type: 3}
   MergeFx: {fileID: 0}
   Material: {fileID: 0}
   ShakeStrength: 0.3

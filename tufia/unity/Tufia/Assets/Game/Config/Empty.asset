@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: Empty
   m_EditorClassIdentifier: 
   Number: 0
-  Prefab: {fileID: 5594919803541160821, guid: 93266a1bea9c1463d96199092f9cd30c, type: 3}
+  Prefab: {fileID: 5594919803541160821, guid: 17b7d1d03224a44419f6e537bf09930d, type: 3}
   MergeFx: {fileID: 0}
   Material: {fileID: 0}
   ShakeStrength: 0.3

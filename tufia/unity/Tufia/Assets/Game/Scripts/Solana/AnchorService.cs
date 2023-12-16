@@ -3,8 +3,8 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text;
 using System.Threading.Tasks;
-using Cysharp.Threading.Tasks;
 using DefaultNamespace;
+using DG.Tweening;
 using Frictionless;
 using Game.Scripts.Ui;
 using Tufia;
@@ -20,6 +20,7 @@ using Solana.Unity.SDK;
 using Solana.Unity.SessionKeys.GplSession.Accounts;
 using Solana.Unity.Wallet;
 using Services;
+using Solana.Unity.Rpc.Core.Sockets;
 using UnityEngine;
 using Debug = UnityEngine.Debug;
 
@@ -41,7 +42,7 @@ public class AnchorService : MonoBehaviour
 
     public static AnchorService Instance { get; private set; }
     public static Action<PlayerData> OnPlayerDataChanged;
-    public static Action<GameData> OnGameDataChanged;
+    public static Action<GameData, bool> OnGameDataChanged;
     public static Action OnInitialDataLoaded;
 
     public bool IsAnyBlockingTransactionInProgress => blockingTransactionsInProgress > 0;
@@ -63,12 +64,13 @@ public class AnchorService : MonoBehaviour
     private int nonBlockingTransactionsInProgress;
     private long? sessionValidUntil;
     private string sessionKeyPassword = "inGame"; // Would be better to generate and save in playerprefs
-    private string DefaultFloorSeed = "floorsss";
+    private string DefaultFloorSeed = "floorsssssss";
     private ushort transactionCounter = 0;
 
     // Only used to show transaction speed. Feel free to remove
     private Dictionary<ushort, Stopwatch> stopWatches = new ();
     private long lastTransactionTimeInMs;
+    private SubscriptionState gameDataSubscription;
 
     private void Awake()
     {
@@ -103,16 +105,16 @@ public class AnchorService : MonoBehaviour
         anchorClient = new TufiaClient(Web3.Rpc, Web3.WsRpc, AnchorProgramIdPubKey);
 
         await SubscribeToPlayerDataUpdates();
-        await SubscribeToGameDataUpdates();
+        await SubscribeToGameDataUpdates(true);
 
         OnInitialDataLoaded?.Invoke();
     }
 
     private void FindPDAs(Account account)
     {
-        PublicKey.TryFindProgramAddress(new[]
-                {Encoding.UTF8.GetBytes("player"), account.PublicKey.KeyBytes},
-            AnchorProgramIdPubKey, out PlayerDataPDA, out byte bump);
+      PublicKey.TryFindProgramAddress(new[]
+          {Encoding.UTF8.GetBytes("player"), account.PublicKey.KeyBytes},
+        AnchorProgramIdPubKey, out PlayerDataPDA, out byte bump);
 
        /* PublicKey.TryFindProgramAddress(new[]
             {Encoding.UTF8.GetBytes(FloorSeed)},
@@ -123,6 +125,18 @@ public class AnchorService : MonoBehaviour
     {
       PublicKey result = null;
       int currentFloor = CurrentPlayerData != null ? CurrentPlayerData.CurrentFloor : 0;
+      seed = DefaultFloorSeed + currentFloor;
+      PublicKey.TryFindProgramAddress(new[]
+          {Encoding.UTF8.GetBytes(seed)  },
+        AnchorProgramIdPubKey, out result, out byte bump2);
+
+      return result;
+    }
+
+    private PublicKey GetNextFloorSeed(out string seed)
+    {
+      PublicKey result = null;
+      int currentFloor = CurrentPlayerData != null ? CurrentPlayerData.CurrentFloor + 1 : 1;
       seed = DefaultFloorSeed + currentFloor;
       PublicKey.TryFindProgramAddress(new[]
           {Encoding.UTF8.GetBytes(seed)  },
@@ -155,7 +169,7 @@ public class AnchorService : MonoBehaviour
         return DateTimeOffset.UtcNow.AddDays(6).ToUnixTimeSeconds();
     }
 
-    private async Task SubscribeToPlayerDataUpdates()
+    public async Task SubscribeToPlayerDataUpdates()
     {
         AccountResultWrapper<PlayerData> playerData = null;
 
@@ -192,38 +206,56 @@ public class AnchorService : MonoBehaviour
         OnPlayerDataChanged?.Invoke(playerData);
     }
 
-    private async Task SubscribeToGameDataUpdates()
+    public async Task UnSubscribeToGameDataUpdates(bool reset)
+    {
+        await Web3.WsRpc.UnsubscribeAsync(gameDataSubscription);
+        gameDataSubscription = null;
+    }
+
+    public async Task SubscribeToGameDataUpdates(bool reset)
     {
         AccountResultWrapper<GameData> gameData = null;
 
         try
         {
-            gameData = await anchorClient.GetGameDataAsync(GetCurrentFloorSeed(out String seed), Commitment.Confirmed);
+          gameData = await anchorClient.GetGameDataAsync(GetCurrentFloorSeed(out String seed), Commitment.Confirmed);
             if (gameData.ParsedResult != null)
             {
                 CurrentGameData = gameData.ParsedResult;
-                OnGameDataChanged?.Invoke(gameData.ParsedResult);
+                OnGameDataChanged?.Invoke(gameData.ParsedResult, true);
+            }
+            else
+            {
+              CurrentGameData = null;
+              OnGameDataChanged?.Invoke(null, true);
             }
         }
         catch (Exception e)
         {
+            CurrentGameData = null;
+            OnGameDataChanged?.Invoke(null, true);
             Debug.Log("Probably game data not available " + e.Message);
         }
 
         if (gameData != null)
         {
-            await anchorClient.SubscribeGameDataAsync(GetCurrentFloorSeed(out String seed), (state, value, gameData) =>
+            if (gameDataSubscription != null)
             {
-                OnRecievedGameDataUpdate(gameData);
+              await Web3.WsRpc.UnsubscribeAsync(gameDataSubscription);
+            }
+
+            gameDataSubscription = await anchorClient.SubscribeGameDataAsync(GetCurrentFloorSeed(out String seed), (state, value, gameData) =>
+            {
+                OnRecievedGameDataUpdate(gameData, false);
             }, Commitment.Processed);
         }
     }
 
-    private void OnRecievedGameDataUpdate(GameData gameData)
+    private void OnRecievedGameDataUpdate(GameData gameData, bool reset)
     {
         Debug.Log($"Socket Message: Total log chopped  {gameData.TotalWoodCollected}.");
         CurrentGameData = gameData;
-        OnGameDataChanged?.Invoke(gameData);
+        OnGameDataChanged?.Invoke(gameData, reset);
     }
 
     public async Task InitAccounts(bool useSession)
@@ -264,7 +296,7 @@ public class AnchorService : MonoBehaviour
 
         await UpdateSessionValid();
         await SubscribeToPlayerDataUpdates();
-        await SubscribeToGameDataUpdates();
+        await SubscribeToGameDataUpdates(true);
     }
 
     private async Task<bool> SendAndConfirmTransaction(WalletBase wallet, Transaction transaction, string label = "",
@@ -326,10 +358,21 @@ public class AnchorService : MonoBehaviour
 
     public void OnCellClicked(byte x, byte y)
     {
-        var cell = ServiceFactory.Resolve<BoardManager>().GetCell(x, y);
+        var targetCell = ServiceFactory.Resolve<BoardManager>().GetCell(x, y);
         var tileData = CurrentGameData.Data[x][y];
         if (tileData.TileType == BUILDING_TYPE_EMPTY)
         {
+            var owner = ServiceFactory.Resolve<BoardManager>().GetCellByOwner(CurrentPlayerData.TileData.TileOwner);
+            if (owner != null)
+            {
+              owner.Tile.Model.transform.LookAt(targetCell.transform);
+              owner.Tile.transform.DOMove(targetCell.transform.position, 1).OnComplete(() =>
+              {
+                //owner.Tile.transform.position = owner.transform.position;
+              });
+            }
+            //targetCell.Tile.transform.position = fromCell.Tile.transform.position;
+            //targetCell.Tile.transform.DOMove(targetCell.transform.position, 1);
             // TODO: Move
             MoveToTile(true, () =>
             {
@@ -338,15 +381,50 @@ public class AnchorService : MonoBehaviour
         }else if (tileData.TileType == BUILDING_TYPE_PLAYER)
         {
             // TODO: If me nothing otherwise attack player
+            // TODO: Move
+            MoveToTile(true, () =>
+            {
+
+            }, x, y);
         } else if (tileData.TileType == BUILDING_TYPE_GOLD_CHEST || tileData.TileType == BUILDING_TYPE_BLUE_CHEST)
         {
             // TODO: Open chest
+            // TODO: Move
+            MoveToTile(true, () =>
+            {
+
+            }, x, y);
         } else if (tileData.TileType == BUILDING_TYPE_ENEMY )
         {
             // TODO: attack enemy or just move?
+            // TODO: Move
+            MoveToTile(true, () =>
+            {
+
+            }, x, y);
         }else if (tileData.TileType == BUILDING_TYPE_STAIRS )
         {
-            // TODO: GO to next floor
+           MoveToStair(true, async () =>
+           {
+              await Web3.WsRpc.UnsubscribeAsync(gameDataSubscription);
+              await SubscribeToPlayerDataUpdates();
+              await SubscribeToGameDataUpdates(true);
+              if (CurrentGameData == null)
+              {
+                BuyNewFloor(() =>
+                {
+
+                });
+              }
+              else
+              {
+                MoveToTile(true, () =>
+                {
+
+                }, x, y);
+              }
+
+           }, x, y);
         }
     }
 
@@ -375,7 +453,7 @@ public class AnchorService : MonoBehaviour
         {
             Player = PlayerDataPDA,
             GameData = GetCurrentFloorSeed(out String seed),
-            SystemProgram = SystemProgram.ProgramIdKey
+            SystemProgram = SystemProgram.ProgramIdKey,
         };
 
         if (useSession && CurrentGameData != null)
@@ -400,7 +478,162 @@ public class AnchorService : MonoBehaviour
 
         if (CurrentGameData == null)
         {
-            await SubscribeToGameDataUpdates();
+            await SubscribeToGameDataUpdates(false);
+        }
+    }
+
+    public async void BuyNewFloor(Action onSuccess)
+    {
+        if (!Instance.IsSessionValid())
+        {
+            await Instance.UpdateSessionValid();
+            ServiceFactory.Resolve<UiService>().OpenPopup(UiService.ScreenType.SessionPopup, new SessionPopupUiData());
+            return;
+        }
+
+        // only for time tracking feel free to remove
+        var stopWatch = new Stopwatch();
+        stopWatch.Start();
+        stopWatches[++transactionCounter] = stopWatch;
+
+        var transaction = new Transaction()
+        {
+            FeePayer = Web3.Account,
+            Instructions = new List<TransactionInstruction>(),
+            RecentBlockHash = await Web3.BlockHash(maxSeconds: 15)
+        };
+
+        BuyNextFloorAccounts accounts = new BuyNextFloorAccounts
+        {
+            Player = PlayerDataPDA,
+            GameData = GetCurrentFloorSeed(out String seed),
+            SystemProgram = SystemProgram.ProgramIdKey,
+        };
+
+        transaction.FeePayer = Web3.Account.PublicKey;
+        accounts.Signer = Web3.Account.PublicKey;
+        var ix = TufiaProgram.BuyNextFloor(accounts, seed, transactionCounter, AnchorProgramIdPubKey);
+        transaction.Add(ix);
+        Debug.Log("Sign and send init without session");
+        await SendAndConfirmTransaction(Web3.Wallet, transaction, "Chop Tree without session.", onSucccess: onSuccess);
+
+        if (CurrentGameData == null)
+        {
+            await SubscribeToGameDataUpdates(false);
+        }
+    }
+
+    public async void MoveToStair(bool useSession, Action onSuccess, ulong x, ulong y)
+    {
+        if (!Instance.IsSessionValid())
+        {
+            await Instance.UpdateSessionValid();
+            ServiceFactory.Resolve<UiService>().OpenPopup(UiService.ScreenType.SessionPopup, new SessionPopupUiData());
+            return;
+        }
+
+        // only for time tracking feel free to remove
+        var stopWatch = new Stopwatch();
+        stopWatch.Start();
+        stopWatches[++transactionCounter] = stopWatch;
+
+        var transaction = new Transaction()
+        {
+            FeePayer = Web3.Account,
+            Instructions = new List<TransactionInstruction>(),
+            RecentBlockHash = await Web3.BlockHash(maxSeconds: 15)
+        };
+
+        MoveToNextFloorAccounts nextFloorAccounts = new MoveToNextFloorAccounts()
+        {
+            Player = PlayerDataPDA,
+            GameData = GetCurrentFloorSeed(out String seed),
+            SystemProgram = SystemProgram.ProgramIdKey,
+        };
+
+        try
+        {
+          var nextData = await anchorClient.GetGameDataAsync(nextFloorAccounts.GameData, Commitment.Confirmed);
+          if (nextData.ParsedResult == null)
+          {
+            useSession = false;
+          }
+        }
+        catch (Exception e)
+        {
+          useSession = false;
+
+          Debug.Log("Probably game data not available " + e.Message);
+        }
+
+        transactionCounter++;
+        if (useSession && CurrentGameData != null)
+        {
+            transaction.FeePayer = sessionWallet.Account.PublicKey;
+            nextFloorAccounts.Signer = sessionWallet.Account.PublicKey;
+            nextFloorAccounts.SessionToken = sessionWallet.SessionTokenPDA;
+            var ix = TufiaProgram.MoveToNextFloor(nextFloorAccounts, seed, transactionCounter, AnchorProgramIdPubKey);
+            transaction.Add(ix);
+            Debug.Log("Sign and send chop tree with session");
+            await SendAndConfirmTransaction(sessionWallet, transaction, "Chop Tree with session.", isBlocking: false, onSucccess: onSuccess);
+        }
+        else
+        {
+            transaction.FeePayer = Web3.Account.PublicKey;
+            nextFloorAccounts.Signer = Web3.Account.PublicKey;
+            var ix = TufiaProgram.MoveToNextFloor(nextFloorAccounts, seed, transactionCounter, AnchorProgramIdPubKey);
+            transaction.Add(ix);
+            Debug.Log("Sign and send init without session");
+            await SendAndConfirmTransaction(Web3.Wallet, transaction, "Chop Tree without session.", onSucccess: onSuccess);
+        }
+
+        if (CurrentGameData == null)
+        {
+            await SubscribeToGameDataUpdates(true);
+        }
+    }
+
+    public async void ResetFloor()
+    {
+        if (!Instance.IsSessionValid())
+        {
+            await Instance.UpdateSessionValid();
+            ServiceFactory.Resolve<UiService>().OpenPopup(UiService.ScreenType.SessionPopup, new SessionPopupUiData());
+            return;
+        }
+
+        // only for time tracking feel free to remove
+        var stopWatch = new Stopwatch();
+        stopWatch.Start();
+        stopWatches[++transactionCounter] = stopWatch;
+
+        var transaction = new Transaction()
+        {
+            FeePayer = Web3.Account,
+            Instructions = new List<TransactionInstruction>(),
+            RecentBlockHash = await Web3.BlockHash(maxSeconds: 15)
+        };
+
+        ResetFloorAccounts chopTreeAccounts = new ResetFloorAccounts
+        {
+            Player = PlayerDataPDA,
+            GameData = GetCurrentFloorSeed(out String seed),
+            SystemProgram = SystemProgram.ProgramIdKey,
+        };
+
+        transaction.FeePayer = Web3.Account.PublicKey;
+        chopTreeAccounts.Signer = Web3.Account.PublicKey;
+        var chopInstruction = TufiaProgram.ResetFloor(chopTreeAccounts, seed, transactionCounter, AnchorProgramIdPubKey);
+        transaction.Add(chopInstruction);
+        Debug.Log("Sign and send init without session");
+        await SendAndConfirmTransaction(Web3.Wallet, transaction, "Reset Floor without session.", onSucccess: () =>
+        {
+            Debug.Log("Success reset");
+        });
+
+        if (CurrentGameData == null)
+        {
+            await SubscribeToGameDataUpdates(true);
         }
     }
 

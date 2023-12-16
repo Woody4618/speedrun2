@@ -1,21 +1,25 @@
 use crate::constants::*;
 use anchor_lang::prelude::*;
 
+use super::game_data::{TileData, TileData2};
+
 #[account]
 pub struct PlayerData {
     pub authority: Pubkey,
     pub name: String,
-    pub level: u8,
-    pub xp: u64,
-    pub health: u64,
-    pub damage: u64,
-    pub defence: u64,
-    pub swords: u64,
-    pub shields: u64,
-    pub energy: u64,
+    pub level: u32,
+    pub xp: u32,
+    pub health: u32,
+    pub max_health: u32,
+    pub damage: u32,
+    pub defence: u32,
+    pub swords: u32,
+    pub shields: u32,
+    pub energy: u32,
     pub last_login: i64,
     pub last_id: u16,
     pub current_floor: u16,
+    pub tile_data: TileData2,
     //pub inventory: Vec<Item>,
 }
 

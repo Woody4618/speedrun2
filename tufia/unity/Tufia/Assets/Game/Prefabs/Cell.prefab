@@ -187,6 +187,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: Terrain small
       objectReference: {fileID: 0}
+    - target: {fileID: 9090228615737675229, guid: 36ef561ebeaf35f4c932a3ad6fbad437, type: 3}
+      propertyPath: m_IsActive
+      value: 0
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 36ef561ebeaf35f4c932a3ad6fbad437, type: 3}
 --- !u!23 &4822749133359330652 stripped
