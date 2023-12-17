@@ -1,5 +1,3 @@
-use std::char::CharTryFromError;
-
 pub use crate::errors::GameErrorCode;
 pub use crate::state::game_data::GameData;
 use crate::state::{game_data::TileData, player_data::PlayerData};
@@ -16,6 +14,9 @@ pub fn buy_next_floor(
 
     let game_data = &mut account.game_data.load_init()?;
     game_data.owner = account.signer.key();
+    game_data.floor_id = account.player.current_floor as u32;
+
+    msg!("Buy next floor {}", account.player.current_floor);
 
     let mut tile_data_clone: TileData = TileData::default();
 
@@ -50,7 +51,7 @@ pub struct BuyNextFloor<'info> {
     // There is one PlayerData account
     #[account(
         mut,
-        seeds = [b"player".as_ref(), player.authority.key().as_ref()],
+        seeds = [b"player1".as_ref(), player.authority.key().as_ref()],
         bump,
     )]
     pub player: Account<'info, PlayerData>,

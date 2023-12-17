@@ -42,7 +42,7 @@ pub struct MoveToTile<'info> {
     // There is one PlayerData account
     #[account(
         mut,
-        seeds = [b"player".as_ref(), player.authority.key().as_ref()],
+        seeds = [b"player1".as_ref(), player.authority.key().as_ref()],
         bump,
     )]
     pub player: Account<'info, PlayerData>,

@@ -12,6 +12,8 @@ namespace Game.Scripts.Ui
         protected void Awake()
         {
             Root.gameObject.SetActive(false);
+            CloseButton.onClick.RemoveAllListeners();
+            CloseButton.onClick.AddListener(OnCloseButtonClicked);
         }
 
         public virtual void Open(UiService.UiData uiData)

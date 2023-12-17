@@ -98,7 +98,12 @@ impl GameData {
         let mut current_player_pos_x: usize = 0;
         let mut current_player_pos_y: usize = 0;
 
+        let mut end_player_pos_x: usize = x as usize;
+        let mut end_player_pos_y: usize = y as usize;
+
         let mut has_stairs: bool = false;
+
+        let mut num_enemies: u32 = 0;
 
         for i in 0..BOARD_SIZE_X {
             for j in 0..BOARD_SIZE_Y {
@@ -107,6 +112,9 @@ impl GameData {
                 if tile.tile_type == STATE_STAIRS {
                     has_stairs = true;
                 }
+                if tile.tile_type == STATE_ENEMY {
+                    num_enemies += 1;
+                }
 
                 if tile.tile_type == STATE_EMPTY {
                     empty_slots.push((i, j));
@@ -114,7 +122,8 @@ impl GameData {
                     current_player_tile = Some(tile);
                     current_player_pos_x = i;
                     current_player_pos_y = j;
-                    msg!("Found player tile")
+                    let floorId = self.floor_id;
+                    msg!("Found player tile {}{} floor: {}", i, j, floorId);
                 } else if tile.tile_owner == player.authority
                     && tile.tile_type == STATE_PLAYER
                     && spawn
@@ -131,10 +140,24 @@ impl GameData {
                 }
 
                 let target_tile = self.data[x as usize][y as usize];
+                msg!("Target tile: {} ", target_tile.tile_type);
 
                 if target_tile.tile_type == STATE_CHEST_GOLD
                     || target_tile.tile_type == STATE_CHEST_BLUE
                 {
+                    let new_game_action = GameAction {
+                        action_id: self.id_counter,
+                        action_type: ACTION_TYPE_OPEN_CHEST,
+                        from_x: current_player_pos_x as u8,
+                        from_y: current_player_pos_x as u8,
+                        to_x: x as u8,
+                        to_y: x as u8,
+                        tile: target_tile,
+                        amount: 0,
+                    };
+
+                    self.add_new_game_action(new_game_action);
+
                     open_chest(
                         player,
                         &mut self.data,
@@ -170,8 +193,19 @@ impl GameData {
                     // Fight enemy
                 }
 
+                msg!("Fight player?");
                 if target_tile.tile_type == STATE_PLAYER {
                     // Fight player
+                    msg!("Fight player");
+                    fight_enemy(
+                        player,
+                        self,
+                        //&mut self.data,
+                        current_player_pos_x,
+                        current_player_pos_y,
+                        x as usize,
+                        y as usize,
+                    )?;
                 }
 
                 if target_tile.tile_type == STATE_STAIRS {
@@ -185,17 +219,18 @@ impl GameData {
                     }
 
                     let mut rng = XorShift64 {
-                        a: empty_slots.len() as u64,
+                        a: empty_slots.len() as u64 + player.health as u64,
                     };
 
                     let random_index = (rng.next() % (empty_slots.len() as u64)) as usize;
                     let random_empty_slot = empty_slots[random_index];
                     msg!(
-                        "Chest spawn at {} {}",
+                        "Player spawn at {} {}",
                         random_empty_slot.0,
                         random_empty_slot.1
                     );
-
+                    end_player_pos_x = random_empty_slot.0 as usize;
+                    end_player_pos_y = random_empty_slot.1 as usize;
                     empty_slots.remove(random_index);
 
                     self.data[random_empty_slot.0][random_empty_slot.1] = TileData {
@@ -213,55 +248,57 @@ impl GameData {
                     current_player_tile = Some(self.data[random_empty_slot.0][random_empty_slot.1]);
 
                     // Spawn enemy
-                    if empty_slots.len() > 0 {
-                        let random_index = (rng.next() % (empty_slots.len() as u64)) as usize;
-                        let random_empty_slot = empty_slots[random_index];
-                        msg!(
-                            "Enemy spawn at {} {}",
-                            random_empty_slot.0,
-                            random_empty_slot.1
-                        );
+                    if (num_enemies < 6) {
+                        if empty_slots.len() > 0 {
+                            let random_index = (rng.next() % (empty_slots.len() as u64)) as usize;
+                            let random_empty_slot = empty_slots[random_index];
+                            msg!(
+                                "Enemy spawn at {} {}",
+                                random_empty_slot.0,
+                                random_empty_slot.1
+                            );
 
-                        empty_slots.remove(random_index);
+                            empty_slots.remove(random_index);
 
-                        self.data[random_empty_slot.0][random_empty_slot.1] = TileData {
-                            tile_owner: player.authority.clone(),
-                            tile_type: STATE_ENEMY,
-                            tile_health: player.current_floor as u32 + 5,
-                            tile_max_health: player.current_floor as u32 + 5,
-                            tile_damage: player.current_floor as u32 + 1,
-                            tile_defence: player.current_floor as u32 + 1,
-                            tile_armor: player.current_floor as u32 + 1,
-                            tile_max_armor: player.current_floor as u32 + 1,
-                            tile_level: player.current_floor as u32 + 1,
-                            tile_xp: player.current_floor as u32 + 1,
-                            ..Default::default()
-                        };
-                    }
-                    if empty_slots.len() > 0 {
-                        let random_index = (rng.next() % (empty_slots.len() as u64)) as usize;
-                        let random_empty_slot = empty_slots[random_index];
-                        msg!(
-                            "Enemy spawn at {} {}",
-                            random_empty_slot.0,
-                            random_empty_slot.1
-                        );
+                            self.data[random_empty_slot.0][random_empty_slot.1] = TileData {
+                                tile_owner: player.authority.clone(),
+                                tile_type: STATE_ENEMY,
+                                tile_health: player.current_floor as u32 + 5,
+                                tile_max_health: player.current_floor as u32 + 5,
+                                tile_damage: player.current_floor as u32 + 1,
+                                tile_defence: player.current_floor as u32 + 1,
+                                tile_armor: player.current_floor as u32 + 1,
+                                tile_max_armor: player.current_floor as u32 + 1,
+                                tile_level: player.current_floor as u32 + 1,
+                                tile_xp: player.current_floor as u32 + 1,
+                                ..Default::default()
+                            };
+                        }
+                        if empty_slots.len() > 0 {
+                            let random_index = (rng.next() % (empty_slots.len() as u64)) as usize;
+                            let random_empty_slot = empty_slots[random_index];
+                            msg!(
+                                "Enemy spawn at {} {}",
+                                random_empty_slot.0,
+                                random_empty_slot.1
+                            );
 
-                        empty_slots.remove(random_index);
+                            empty_slots.remove(random_index);
 
-                        self.data[random_empty_slot.0][random_empty_slot.1] = TileData {
-                            tile_owner: player.authority.clone(),
-                            tile_type: STATE_ENEMY,
-                            tile_health: player.current_floor as u32 + 5,
-                            tile_max_health: player.current_floor as u32 + 5,
-                            tile_damage: player.current_floor as u32 + 1,
-                            tile_defence: player.current_floor as u32 + 1,
-                            tile_armor: player.current_floor as u32 + 1,
-                            tile_max_armor: player.current_floor as u32 + 1,
-                            tile_level: player.current_floor as u32 + 1,
-                            tile_xp: player.current_floor as u32 + 1,
-                            ..Default::default()
-                        };
+                            self.data[random_empty_slot.0][random_empty_slot.1] = TileData {
+                                tile_owner: player.authority.clone(),
+                                tile_type: STATE_ENEMY,
+                                tile_health: player.current_floor as u32 + 5,
+                                tile_max_health: player.current_floor as u32 + 5,
+                                tile_damage: player.current_floor as u32 + 1,
+                                tile_defence: player.current_floor as u32 + 1,
+                                tile_armor: player.current_floor as u32 + 1,
+                                tile_max_armor: player.current_floor as u32 + 1,
+                                tile_level: player.current_floor as u32 + 1,
+                                tile_xp: player.current_floor as u32 + 1,
+                                ..Default::default()
+                            };
+                        }
                     }
 
                     // Spawn stairs
@@ -291,7 +328,37 @@ impl GameData {
                         };
                     }
 
-                    // Spawn chest
+                    let random_index = (rng.next() % (100)) as usize;
+
+                    msg!("Random index chest: {}", random_index);
+                    // Spawn Super chest
+                    if empty_slots.len() > 0 && random_index > 70 {
+                        let random_index = (rng.next() % (empty_slots.len() as u64)) as usize;
+                        let random_empty_slot = empty_slots[random_index];
+                        msg!(
+                            "Player spawn at {} {}",
+                            random_empty_slot.0,
+                            random_empty_slot.1
+                        );
+
+                        empty_slots.remove(random_index);
+
+                        self.data[random_empty_slot.0][random_empty_slot.1] = TileData {
+                            tile_owner: player.authority.clone(),
+                            tile_type: STATE_CHEST_BLUE,
+                            tile_health: 0,
+                            tile_damage: 0,
+                            tile_defence: 0,
+                            tile_level: 1,
+                            tile_xp: 0,
+                            ..Default::default()
+                        };
+                    }
+
+                    let random_index = (rng.next() % (100)) as usize;
+
+                    msg!("Random index chest: {}", random_index);
+                    // Spawn Super chest
                     if empty_slots.len() > 0 {
                         let random_index = (rng.next() % (empty_slots.len() as u64)) as usize;
                         let random_empty_slot = empty_slots[random_index];
@@ -338,16 +405,26 @@ impl GameData {
         self.add_new_game_action(new_game_action);
 
         let mut tile_data_clone: TileData2 = TileData2::default();
-        tile_data_clone.tile_armor = self.data[x as usize][y as usize].tile_armor;
-        tile_data_clone.tile_damage = self.data[x as usize][y as usize].tile_damage;
-        tile_data_clone.tile_defence = self.data[x as usize][y as usize].tile_defence;
-        tile_data_clone.tile_health = self.data[x as usize][y as usize].tile_health;
-        tile_data_clone.tile_level = self.data[x as usize][y as usize].tile_level;
-        tile_data_clone.tile_max_armor = self.data[x as usize][y as usize].tile_max_armor;
-        tile_data_clone.tile_max_health = self.data[x as usize][y as usize].tile_max_health;
-        tile_data_clone.tile_owner = self.data[x as usize][y as usize].tile_owner;
-        tile_data_clone.tile_type = self.data[x as usize][y as usize].tile_type;
-        tile_data_clone.tile_xp = self.data[x as usize][y as usize].tile_xp;
+        tile_data_clone.tile_armor =
+            self.data[end_player_pos_x as usize][end_player_pos_y as usize].tile_armor;
+        tile_data_clone.tile_damage =
+            self.data[end_player_pos_x as usize][end_player_pos_y as usize].tile_damage;
+        tile_data_clone.tile_defence =
+            self.data[end_player_pos_x as usize][end_player_pos_y as usize].tile_defence;
+        tile_data_clone.tile_health =
+            self.data[end_player_pos_x as usize][end_player_pos_y as usize].tile_health;
+        tile_data_clone.tile_level =
+            self.data[end_player_pos_x as usize][end_player_pos_y as usize].tile_level;
+        tile_data_clone.tile_max_armor =
+            self.data[end_player_pos_x as usize][end_player_pos_y as usize].tile_max_armor;
+        tile_data_clone.tile_max_health =
+            self.data[end_player_pos_x as usize][end_player_pos_y as usize].tile_max_health;
+        tile_data_clone.tile_owner =
+            self.data[end_player_pos_x as usize][end_player_pos_y as usize].tile_owner;
+        tile_data_clone.tile_type =
+            self.data[end_player_pos_x as usize][end_player_pos_y as usize].tile_type;
+        tile_data_clone.tile_xp =
+            self.data[end_player_pos_x as usize][end_player_pos_y as usize].tile_xp;
 
         player.tile_data = tile_data_clone;
 
@@ -374,6 +451,8 @@ impl GameData {
                 if self.data[i][j].tile_owner == player && self.data[i][j].tile_type == STATE_PLAYER
                 {
                     self.data[i][j].tile_type = STATE_EMPTY;
+                    self.data[i][j].tile_owner = Pubkey::default();
+                    msg!("Player removed");
                 }
             }
         }
@@ -413,8 +492,9 @@ impl GameData {
             return Err(GameErrorCode::BoardIsFull.into());
         }
 
+        let slot = Clock::get()?.slot;
         let mut rng = XorShift64 {
-            a: empty_slots.len() as u64,
+            a: empty_slots.len() as u64 + slot,
         };
 
         let random_index = (rng.next() % (empty_slots.len() as u64)) as usize;
@@ -429,31 +509,34 @@ impl GameData {
 
         empty_slots.remove(random_index);
 
-        // Spawn enemy
-        if empty_slots.len() > 0 {
-            let random_index = (rng.next() % (empty_slots.len() as u64)) as usize;
-            let random_empty_slot = empty_slots[random_index];
-            msg!(
-                "Enemy spawn at {} {}",
-                random_empty_slot.0,
-                random_empty_slot.1
-            );
+        for i in 1..=3 {
+            println!("Spawn enem: {}", i);
+            // Spawn enemy
+            if empty_slots.len() > 0 {
+                let random_index = (rng.next() % (empty_slots.len() as u64)) as usize;
+                let random_empty_slot = empty_slots[random_index];
+                msg!(
+                    "Enemy spawn at {} {}",
+                    random_empty_slot.0,
+                    random_empty_slot.1
+                );
 
-            empty_slots.remove(random_index);
+                empty_slots.remove(random_index);
 
-            self.data[random_empty_slot.0][random_empty_slot.1] = TileData {
-                tile_owner: player.clone(),
-                tile_type: STATE_ENEMY,
-                tile_health: self.floor_id + 5,
-                tile_max_health: self.floor_id + 5,
-                tile_damage: self.floor_id + 1,
-                tile_defence: self.floor_id + 1,
-                tile_armor: self.floor_id + 1,
-                tile_max_armor: self.floor_id + 1,
-                tile_level: self.floor_id + 1,
-                tile_xp: self.floor_id + 1,
-                ..Default::default()
-            };
+                self.data[random_empty_slot.0][random_empty_slot.1] = TileData {
+                    tile_owner: player.clone(),
+                    tile_type: STATE_ENEMY,
+                    tile_health: self.floor_id + 5,
+                    tile_max_health: self.floor_id + 5,
+                    tile_damage: self.floor_id + 1,
+                    tile_defence: self.floor_id + 1,
+                    tile_armor: self.floor_id + 1,
+                    tile_max_armor: self.floor_id + 1,
+                    tile_level: self.floor_id + 1,
+                    tile_xp: self.floor_id + 1,
+                    ..Default::default()
+                };
+            }
         }
 
         if empty_slots.len() > 0 {
@@ -501,6 +584,32 @@ impl GameData {
                 tile_damage: 0,
                 tile_defence: 0,
                 tile_level: self.floor_id + 1,
+                tile_xp: 0,
+                ..Default::default()
+            };
+        }
+
+        let random_index = (rng.next() % (100)) as usize;
+        msg!("Random index chest: {}", random_index);
+        // Spawn Super chest
+        if empty_slots.len() > 0 && random_index > 50 && self.floor_id > 0 {
+            let random_index = (rng.next() % (empty_slots.len() as u64)) as usize;
+            let random_empty_slot = empty_slots[random_index];
+            msg!(
+                "Super chest spawn at {} {}",
+                random_empty_slot.0,
+                random_empty_slot.1
+            );
+
+            empty_slots.remove(random_index);
+
+            self.data[random_empty_slot.0][random_empty_slot.1] = TileData {
+                tile_owner: player.clone(),
+                tile_type: STATE_CHEST_BLUE,
+                tile_health: 0,
+                tile_damage: 0,
+                tile_defence: 0,
+                tile_level: 1,
                 tile_xp: 0,
                 ..Default::default()
             };
@@ -673,10 +782,29 @@ fn fight_enemy(
             amount: 0,
         };
         playerData.current_floor = 0;
+        playerData.xp = 0;
+        playerData.level = 0;
         gameData.add_new_game_action(new_game_action);
         msg!("Player died");
     } else {
         msg!("Enemy killed");
+        playerData.add_xp(gameData.data[enemy_x][enemy_y].tile_level + 1);
+
+        gameData.data[player_pos_x as usize][player_pos_y as usize].tile_xp +=
+            gameData.data[enemy_x][enemy_y].tile_level + 1;
+
+        while gameData.data[player_pos_x as usize][player_pos_y as usize].tile_xp
+            >= 5 * gameData.data[player_pos_x as usize][player_pos_y as usize].tile_level
+        {
+            gameData.data[player_pos_x][player_pos_y].tile_xp -=
+                5 * gameData.data[player_pos_x][player_pos_y].tile_level;
+            gameData.data[player_pos_x][player_pos_y].tile_level += 1;
+            gameData.data[player_pos_x][player_pos_y].tile_max_health += 1;
+            gameData.data[player_pos_x][player_pos_y].tile_health =
+                gameData.data[player_pos_x][player_pos_y].tile_max_health;
+            gameData.data[player_pos_x][player_pos_y].tile_damage += 1;
+        }
+
         move_player(
             &mut gameData.data,
             player_pos_x,

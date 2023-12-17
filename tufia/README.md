@@ -138,7 +138,7 @@ pub struct InitPlayer<'info> {
         init,
         payer = signer,
         space = 1000, // 8+32+x+1+8+8+8 But taking 1000 to have space to expand easily.
-        seeds = [b"player".as_ref(), signer.key().as_ref()],
+        seeds = [b"player1".as_ref(), signer.key().as_ref()],
         bump,
     )]
     pub player: Account<'info, PlayerData>,

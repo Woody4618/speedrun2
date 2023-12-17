@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using Cysharp.Threading.Tasks;
 using DG.Tweening;
 using Frictionless;
+using Solana.Unity.SDK;
 using Solana.Unity.Wallet;
 using SolPlay.Scripts.Ui;
 using Tufia.Accounts;
@@ -139,32 +140,17 @@ namespace DefaultNamespace
                 if (!alreadyPrerformedGameActions.ContainsKey(gameAction.ActionId))
                 {
                     var targetCell = GetCell(gameAction.ToX, gameAction.ToY);
-
+                    var playerCell = GetCellByOwner(gameAction.Tile.TileOwner);
+                    if (playerCell == null || gameAction.Tile.TileOwner != playerCell.Tile.currentTileData.TileOwner)
+                    {
+                      continue;
+                    }
                     Debug.Log($"Target Cell: {targetCell.X} {targetCell.Y}");
                     if (gameAction.ActionType == ACTION_TYPE_MOVE)
                     {
-                        var fromCell = GetCell(gameAction.FromX, gameAction.FromY);
-                        Debug.Log($"From Cell: {fromCell.X} {fromCell.Y}");
+                      PredictMove(gameAction, targetCell);
 
-                        var tileConfig = FindTileConfigByTileData(gameAction.Tile);
-                        targetCell.Tile.Init(tileConfig, gameAction.Tile, false);
-
-                        var emptyConfig = FindTileConfigByName("Empty");
-                        fromCell.Tile.Init(emptyConfig, new TileData(), false);
-
-                        fromCell.Tile.transform.DOKill();
-                        fromCell.Tile.transform.DOMove(targetCell.transform.position, 0.3f).OnComplete(() =>
-                        {
-                          var tileConfig = FindTileConfigByTileData(gameAction.Tile);
-                          targetCell.Tile.Init(tileConfig, gameAction.Tile, true);
-                          targetCell.Tile.transform.position = targetCell.transform.position;
-
-                          var emptyConfig = FindTileConfigByName("Empty");
-                          fromCell.Tile.Init(emptyConfig, new TileData(), true);
-                          fromCell.Tile.transform.position = fromCell.transform.position;
-                        });
-
-                        // TODO: Animate and kill the last item
+                      // TODO: Animate and kill the last item
                         //var fromCell = GetCell(gameAction.FromX, gameAction.FromY);
                         //fromCell.Tile = null;
                     }
@@ -176,7 +162,11 @@ namespace DefaultNamespace
 
                     if (gameAction.ActionType == ACTION_TYPE_OPEN_CHEST)
                     {
-                        // nothin
+                      var fromCell = GetCell(gameAction.FromX, gameAction.FromY);
+                      var owner = ServiceFactory.Resolve<BoardManager>().GetCellByOwner(Web3.Account.PublicKey);
+
+                      PredictMove(gameAction, targetCell);
+                      ServiceFactory.Resolve<ItemPopup>().ShowItem(targetCell.Tile.currentTileData.TileType == AnchorService.BUILDING_TYPE_BLUE_CHEST, owner.Tile.currentTileData);
                     }
 
                     if (gameAction.ActionType == ACTION_TYPE_RESET)
@@ -193,8 +183,9 @@ namespace DefaultNamespace
                     {
                         OnGameReset();
                         await AnchorService.Instance.SubscribeToPlayerDataUpdates();
-                        await AnchorService.Instance.UnSubscribeToGameDataUpdates(true);
+                        await AnchorService.Instance.UnSubscribeToGameDataUpdates();
                         await AnchorService.Instance.SubscribeToGameDataUpdates(true);
+
                         //CreateStartingTiles(CurrentBaordAccount);
                         isInitialized = false;
                         return;
@@ -203,6 +194,30 @@ namespace DefaultNamespace
                     alreadyPrerformedGameActions.Add(gameAction.ActionId, gameAction);
                 }
             }
+        }
+
+        private void PredictMove(GameAction gameAction, Cell targetCell)
+        {
+          var fromCell = GetCell(gameAction.FromX, gameAction.FromY);
+          Debug.Log($"From Cell: {fromCell.X} {fromCell.Y}");
+
+          var tileConfig = FindTileConfigByTileData(gameAction.Tile);
+          targetCell.Tile.Init(tileConfig, gameAction.Tile, false);
+
+          var emptyConfig = FindTileConfigByName("Empty");
+          fromCell.Tile.Init(emptyConfig, new TileData(), false);
+
+          fromCell.Tile.transform.DOKill();
+          fromCell.Tile.transform.DOMove(targetCell.transform.position, 0.3f).OnComplete(() =>
+          {
+            var tileConfig = FindTileConfigByTileData(gameAction.Tile);
+            targetCell.Tile.Init(tileConfig, gameAction.Tile, true);
+            targetCell.Tile.transform.position = targetCell.transform.position;
+
+            var emptyConfig = FindTileConfigByName("Empty");
+            fromCell.Tile.Init(emptyConfig, new TileData(), true);
+            fromCell.Tile.transform.position = fromCell.transform.position;
+          });
         }
 
         private async UniTask PerformFightAction(GameAction gameAction, Cell targetCell)

@@ -41,6 +41,24 @@ impl PlayerData {
         Ok(())
     }
 
+    pub fn add_xp(&mut self, amount: u32) {
+        self.xp += amount;
+
+        while self.xp >= self.xp_threshold() {
+            self.xp -= self.xp_threshold();
+            self.level += 1;
+            self.max_health += 1;
+            self.health = self.max_health;
+            self.damage += 1;
+
+            println!("Leveled up! Current level: {}", self.level);
+        }
+    }
+
+    pub fn xp_threshold(&self) -> u32 {
+        5 * self.level // Example: Each level requires 100 * level XP
+    }
+
     pub fn update_energy(&mut self) -> Result<()> {
         // Get the current timestamp
         let current_timestamp = Clock::get()?.unix_timestamp;

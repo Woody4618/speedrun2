@@ -36,8 +36,8 @@ public class AnchorService : MonoBehaviour
     public const byte BUILDING_TYPE_EMPTY = 0;
     public const byte BUILDING_TYPE_PLAYER = 1;
     public const byte BUILDING_TYPE_ENEMY = 2;
-    public const byte BUILDING_TYPE_BLUE_CHEST = 3;
-    public const byte BUILDING_TYPE_GOLD_CHEST = 4;
+    public const byte BUILDING_TYPE_GOLD_CHEST = 3;
+    public const byte BUILDING_TYPE_BLUE_CHEST = 4;
     public const byte BUILDING_TYPE_STAIRS = 5;
 
     public static AnchorService Instance { get; private set; }
@@ -64,13 +64,15 @@ public class AnchorService : MonoBehaviour
     private int nonBlockingTransactionsInProgress;
     private long? sessionValidUntil;
     private string sessionKeyPassword = "inGame"; // Would be better to generate and save in playerprefs
-    private string DefaultFloorSeed = "floorsssssss";
+    private string DefaultFloorSeed = "floorssssssssss";
+    private string PlayerSeed = "player1";
     private ushort transactionCounter = 0;
 
     // Only used to show transaction speed. Feel free to remove
     private Dictionary<ushort, Stopwatch> stopWatches = new ();
     private long lastTransactionTimeInMs;
     private SubscriptionState gameDataSubscription;
+    private SubscriptionState playerSubscription;
 
     private void Awake()
     {
@@ -113,7 +115,7 @@ public class AnchorService : MonoBehaviour
     private void FindPDAs(Account account)
     {
       PublicKey.TryFindProgramAddress(new[]
-          {Encoding.UTF8.GetBytes("player"), account.PublicKey.KeyBytes},
+          {Encoding.UTF8.GetBytes(PlayerSeed), account.PublicKey.KeyBytes},
         AnchorProgramIdPubKey, out PlayerDataPDA, out byte bump);
 
        /* PublicKey.TryFindProgramAddress(new[]
@@ -190,7 +192,14 @@ public class AnchorService : MonoBehaviour
 
         if (playerData != null)
         {
-            await anchorClient.SubscribePlayerDataAsync(PlayerDataPDA, (state, value, playerData) =>
+          Debug.Log("Subscription: Unsubscribe to player data");
+
+          if (playerSubscription != null)
+          {
+            await Web3.WsRpc.UnsubscribeAsync(playerSubscription);
+            playerSubscription = null;
+          }
+           playerSubscription = await anchorClient.SubscribePlayerDataAsync(PlayerDataPDA, (state, value, playerData) =>
             {
                 OnReceivedPlayerDataUpdate(playerData);
             }, Commitment.Processed);
@@ -206,7 +215,7 @@ public class AnchorService : MonoBehaviour
         OnPlayerDataChanged?.Invoke(playerData);
     }
 
-    public async Task UnSubscribeToGameDataUpdates(bool reset)
+    public async Task UnSubscribeToGameDataUpdates()
     {
         await Web3.WsRpc.UnsubscribeAsync(gameDataSubscription);
         gameDataSubscription = null;
@@ -241,8 +250,10 @@ public class AnchorService : MonoBehaviour
         {
             if (gameDataSubscription != null)
             {
-              await Web3.WsRpc.UnsubscribeAsync(gameDataSubscription);
+              Debug.Log("Subscription: Unsubscribe to game data");
+              await UnSubscribeToGameDataUpdates();
             }
+            Debug.Log("Subscription: Subscribe to game data");
 
             gameDataSubscription = await anchorClient.SubscribeGameDataAsync(GetCurrentFloorSeed(out String seed), (state, value, gameData) =>
             {
@@ -253,7 +264,7 @@ public class AnchorService : MonoBehaviour
 
     private void OnRecievedGameDataUpdate(GameData gameData, bool reset)
     {
-        Debug.Log($"Socket Message: Total log chopped  {gameData.TotalWoodCollected}.");
+//        Debug.Log($"Socket Message: Total log chopped  {gameData.TotalWoodCollected}.");
         CurrentGameData = gameData;
         OnGameDataChanged?.Invoke(gameData, reset);
     }
@@ -360,6 +371,9 @@ public class AnchorService : MonoBehaviour
     {
         var targetCell = ServiceFactory.Resolve<BoardManager>().GetCell(x, y);
         var tileData = CurrentGameData.Data[x][y];
+        var playerCell = ServiceFactory.Resolve<BoardManager>().GetCellByOwner(CurrentPlayerData.Authority);
+        bool playerDead = playerCell == null || playerCell.Tile.currentTileData.TileHealth <= 0;
+
         if (tileData.TileType == BUILDING_TYPE_EMPTY)
         {
             var owner = ServiceFactory.Resolve<BoardManager>().GetCellByOwner(CurrentPlayerData.TileData.TileOwner);
@@ -380,6 +394,21 @@ public class AnchorService : MonoBehaviour
             }, x, y);
         }else if (tileData.TileType == BUILDING_TYPE_PLAYER)
         {
+            if (playerDead)
+            {
+              return;
+            }
+            var owner = ServiceFactory.Resolve<BoardManager>().GetCellByOwner(CurrentPlayerData.TileData.TileOwner);
+            if (owner != null)
+            {
+              owner.Tile.Model.transform.LookAt(targetCell.transform);
+              owner.Tile.transform.DOMove(targetCell.transform.position, 1).OnComplete(() =>
+              {
+                //owner.Tile.transform.position = owner.transform.position;
+              });
+            }
+            ServiceFactory.Resolve<FightPopup>().StartBattle(CurrentPlayerData.TileData, tileData, true);
+
             // TODO: If me nothing otherwise attack player
             // TODO: Move
             MoveToTile(true, () =>
@@ -388,6 +417,19 @@ public class AnchorService : MonoBehaviour
             }, x, y);
         } else if (tileData.TileType == BUILDING_TYPE_GOLD_CHEST || tileData.TileType == BUILDING_TYPE_BLUE_CHEST)
         {
+          if (playerDead)
+          {
+            return;
+          }
+            var owner = ServiceFactory.Resolve<BoardManager>().GetCellByOwner(CurrentPlayerData.TileData.TileOwner);
+            if (owner != null)
+            {
+              owner.Tile.Model.transform.LookAt(targetCell.transform);
+              owner.Tile.transform.DOMove(targetCell.transform.position, 1).OnComplete(() =>
+              {
+                //owner.Tile.transform.position = owner.transform.position;
+              });
+            }
             // TODO: Open chest
             // TODO: Move
             MoveToTile(true, () =>
@@ -396,6 +438,13 @@ public class AnchorService : MonoBehaviour
             }, x, y);
         } else if (tileData.TileType == BUILDING_TYPE_ENEMY )
         {
+          if (playerDead)
+          {
+            return;
+          }
+            var owner = ServiceFactory.Resolve<BoardManager>().GetCellByOwner(CurrentPlayerData.TileData.TileOwner);
+
+            ServiceFactory.Resolve<FightPopup>().StartBattle(CurrentPlayerData.TileData, tileData, false);
             // TODO: attack enemy or just move?
             // TODO: Move
             MoveToTile(true, () =>
@@ -404,6 +453,31 @@ public class AnchorService : MonoBehaviour
             }, x, y);
         }else if (tileData.TileType == BUILDING_TYPE_STAIRS )
         {
+          if (playerDead)
+          {
+            return;
+          }
+
+          int totalEnemies = 0;
+          for (int i = 0; i < BoardManager.WIDTH; i++)
+          {
+            for (int j = 0; j < BoardManager.HEIGHT; j++)
+            {
+               var tile =  Instance.CurrentGameData.Data[i][j];
+               if (tile.TileType == BUILDING_TYPE_ENEMY)
+               {
+                 totalEnemies++;
+               }
+            }
+          }
+
+          // TODO: move to backend
+          if (totalEnemies > 0)
+          {
+            ServiceFactory.Resolve<AlertPopup>().Open(new UiService.UiData());
+            return;
+          }
+
            MoveToStair(true, async () =>
            {
               await Web3.WsRpc.UnsubscribeAsync(gameDataSubscription);
@@ -566,7 +640,6 @@ public class AnchorService : MonoBehaviour
           Debug.Log("Probably game data not available " + e.Message);
         }
 
-        transactionCounter++;
         if (useSession && CurrentGameData != null)
         {
             transaction.FeePayer = sessionWallet.Account.PublicKey;

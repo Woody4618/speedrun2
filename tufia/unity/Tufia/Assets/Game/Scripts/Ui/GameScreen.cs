@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using DefaultNamespace;
 using DG.Tweening;
 using Frictionless;
 using Tufia.Accounts;
@@ -26,7 +27,10 @@ public class GameScreen : MonoBehaviour
     public TextMeshProUGUI CurrentFloorText;
     public TextMeshProUGUI NextEnergyInText;
     public TextMeshProUGUI TotalLogAvailableText;
+    public TextMeshProUGUI FloorOwnerText;
 
+    public GameObject HasNoPlayerOnFloorRoot;
+    public GameObject FloorIsEmptyRoot;
     public GameObject NotInitializedRoot;
     public GameObject InitializedRoot;
     public GameObject ActionFx;
@@ -104,12 +108,13 @@ public class GameScreen : MonoBehaviour
 
     private void OnGameDataChanged(GameData gameData, bool reset)
     {
-        if (gameData == null)
+      if (gameData == null)
         {
           currentGameData = gameData;
           return;
         }
 
+      FloorOwnerText.text = "Owner: " + gameData.Owner;
         if (currentGameData != null && currentGameData.TotalWoodCollected != gameData.TotalWoodCollected)
         {
             Tree.transform.DOKill();
@@ -134,6 +139,10 @@ public class GameScreen : MonoBehaviour
         {
             return;
         }
+
+        var playerCell = ServiceFactory.Resolve<BoardManager>().GetCellByOwner(AnchorService.Instance.CurrentPlayerData.Authority);
+        HasNoPlayerOnFloorRoot.gameObject.SetActive(playerCell == null && AnchorService.Instance.CurrentGameData != null);
+        FloorIsEmptyRoot.gameObject.SetActive(AnchorService.Instance.CurrentGameData == null);
 
         var lastLoginTime = AnchorService.Instance.CurrentPlayerData.LastLogin;
         var timePassed = DateTimeOffset.UtcNow.ToUnixTimeSeconds() - lastLoginTime;

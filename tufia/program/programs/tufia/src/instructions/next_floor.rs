@@ -10,9 +10,10 @@ pub fn next_floor(mut ctx: Context<NextFloor>, counter: u16) -> Result<()> {
 
     let game_data = &mut account.game_data.load_mut()?;
 
-    game_data.remove_player(account.signer.key())?;
+    game_data.remove_player(account.player.authority.key())?;
 
     account.player.current_floor += 1;
+    msg!("Next floor {}", account.player.current_floor);
 
     Ok(())
 }
@@ -32,7 +33,7 @@ pub struct NextFloor<'info> {
     // There is one PlayerData account
     #[account(
         mut,
-        seeds = [b"player".as_ref(), player.authority.key().as_ref()],
+        seeds = [b"player1".as_ref(), player.authority.key().as_ref()],
         bump,
     )]
     pub player: Account<'info, PlayerData>,

@@ -1,4 +1,3 @@
-using System;
 using TMPro;
 using Tufia.Types;
 using UnityEngine;
@@ -17,6 +16,29 @@ public class HealthBar : MonoBehaviour
     private void Awake()
     {
       Root.gameObject.SetActive(false);
+    }
+
+    public void SetData(TileData2 tileData)
+    {
+      Root.gameObject.SetActive(tileData.TileType == AnchorService.BUILDING_TYPE_PLAYER ||
+                                tileData.TileType == AnchorService.BUILDING_TYPE_ENEMY );
+      if (tileData.TileMaxHealth > 0)
+      {
+        GreenBar.transform.localScale = new Vector3(tileData.TileHealth / (float) tileData.TileMaxHealth, 1, 1);
+      }
+      else
+      {
+        GreenBar.transform.localScale = new Vector3(0, 1, 1);
+      }
+      ArmorBar.gameObject.SetActive(tileData.TileMaxArmor>0);
+      if (tileData.TileMaxArmor > 0)
+      {
+        ArmorBar.transform.localScale = new Vector3(tileData.TileArmor / (float) tileData.TileMaxArmor, 1, 1);
+      }
+      HealthText.text = $"{tileData.TileHealth}/{tileData.TileMaxHealth}";
+      DefenceText.text = $"{tileData.TileDefence}";
+      DamageText.text = $"{tileData.TileDamage}";
+      LevelText.text = $"{tileData.TileLevel}";
     }
 
     public void SetData(TileData tileData)
